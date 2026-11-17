@@ -15,6 +15,10 @@
   <img alt="Version" src="https://img.shields.io/badge/version-0.1.0-346DF5" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/stone2010/Mind/releases/tag/v0.1.0"><strong>下载 Windows 安装包</strong></a>
+</p>
+
 Mind 是一个面向普通用户的 Windows 桌面 AI 客户端：安装后填入 DeepSeek API Key 就能聊天，聊天记录、记忆、用量都保存在本机。默认 100k 上下文并在超出预算时自动压缩；支持联网搜索、长期记忆、本地 MCP 插件、GitHub 只读连接，以及 Mermaid 流程图和数据图表。
 
 > 当前版本为 `0.1.0`，Windows 优先，仍在持续完善。项目没有使用 Mind 自己的服务器中转请求，API Key 不会上传。
@@ -50,13 +54,15 @@ Mind 是一个面向普通用户的 Windows 桌面 AI 客户端：安装后填�
 
 ### 直接使用
 
-构建后运行 NSIS 安装包：
+从 [Releases](https://github.com/stone2010/Mind/releases/tag/v0.1.0) 下载 `Mind_0.1.0_x64-setup.exe`，运行安装向导即可。安装包未签名，Windows SmartScreen 可能提示未知发布者；请确认下载来源。
+
+也可以从源码构建，安装包位于：
 
 ```text
 src-tauri/target/release/bundle/nsis/Mind_0.1.0_x64-setup.exe
 ```
 
-项目暂未发布 GitHub Release；也可以直接运行 `src-tauri/target/release/mind.exe`。首次打开：
+首次打开：
 
 1. 选择「开始配置」；
 2. 填入 DeepSeek API Key（可在 DeepSeek 开放平台创建）；
