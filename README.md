@@ -12,16 +12,16 @@
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows" />
   <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri" />
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react" />
-  <img alt="Version" src="https://img.shields.io/badge/version-0.1.0-346DF5" />
+  <img alt="Version" src="https://img.shields.io/badge/version-0.1.1-346DF5" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/stone2010/Mind/releases/tag/v0.1.0"><strong>下载 Windows 安装包</strong></a>
+  <a href="https://github.com/stone2010/Mind/releases/tag/v0.1.1"><strong>下载 Windows 安装包</strong></a>
 </p>
 
 Mind 是一个面向普通用户的 Windows 桌面 AI 客户端：安装后填入 DeepSeek API Key 就能聊天，聊天记录、记忆、用量都保存在本机。默认 100k 上下文并在超出预算时自动压缩；支持联网搜索、长期记忆、本地 MCP 插件、GitHub 只读连接，以及 Mermaid 流程图和数据图表。
 
-> 当前版本为 `0.1.0`，Windows 优先，仍在持续完善。项目没有使用 Mind 自己的服务器中转请求，API Key 不会上传。
+> 当前版本为 `0.1.1`，Windows 优先，仍在持续完善。项目没有使用 Mind 自己的服务器中转请求，API Key 不会上传。
 
 ## 界面
 
@@ -44,31 +44,34 @@ Mind 是一个面向普通用户的 Windows 桌面 AI 客户端：安装后填�
 | 上下文与费用 | 4k / 8k / 16k / 100k / 完整历史，或自定义 0–128k；超出 85% 自动压缩较早对话 |
 | 联网搜索 | DeepSeek 服务端 `deepseek_web_search`，展示搜索查询与来源卡片，支持多轮工具历史 |
 | 长期记忆 | 手动添加，或回复后由轻量模型自动提取；可开关是否注入对话 |
-| 用量看板 | 记录真实 prompt / completion / total token，区分峰谷时，按自填单价估算费用，可关闭或清除 |
+| 用量与费用 | 记录真实 token（含缓存命中/未命中），DeepSeek 按官方峰谷价自动估算，其他模型可单独配价；对话标题栏实时显示「约 X 分」；可关闭 |
+| 数据备份 | 导出/导入 JSON；包含对话、消息、项目、记忆和用量，不包含密钥和设置；可合并或覆盖 |
 | 可视化 | 渲染 Mermaid 流程图、柱状/折线/饼图；Markdown 图片点击放大 |
 | 本地 MCP 插件 | 插件中心、Node/uv 环境检测、一键添加、工具列表、失败 stderr 提示 |
 | GitHub | 使用 Personal Access Token 读取仓库、Issue、PR、搜索和文件；Token 只存 Windows 凭据管理器 |
 | 本地优先 | 对话、项目、记忆、设置、用量存在本地 SQLite；API Key / GitHub Token 存在 Windows Credential Manager |
+| 法律与隐私 | 首次使用前的用户协议/隐私确认；协议与隐私说明随仓库公开 |
 
 ## 快速开始
 
 ### 直接使用
 
-从 [Releases](https://github.com/stone2010/Mind/releases/tag/v0.1.0) 下载 `Mind_0.1.0_x64-setup.exe`，运行安装向导即可。安装包未签名，Windows SmartScreen 可能提示未知发布者；请确认下载来源。
+从 [Releases](https://github.com/stone2010/Mind/releases/tag/v0.1.1) 下载 `Mind_0.1.1_x64-setup.exe`，运行安装向导即可。安装包未签名，Windows SmartScreen 可能提示未知发布者；请确认下载来源。
 
 也可以从源码构建，安装包位于：
 
 ```text
-src-tauri/target/release/bundle/nsis/Mind_0.1.0_x64-setup.exe
+src-tauri/target/release/bundle/nsis/Mind_0.1.1_x64-setup.exe
 ```
 
 首次打开：
 
-1. 选择「开始配置」；
-2. 填入 DeepSeek API Key（可在 DeepSeek 开放平台创建）；
-3. 选择上下文长度与功能偏好；
-4. 可选安装本地插件，或直接在「设置 → 连接器」中配置 GitHub；
-5. 开始聊天。
+1. 阅读并同意用户协议与隐私说明；
+2. 选择「开始配置」；
+3. 填入 DeepSeek API Key（可在 DeepSeek 开放平台创建）；
+4. 选择上下文长度与功能偏好；
+5. 可选安装本地插件，或直接在「设置 → 连接器」中配置 GitHub；
+6. 开始聊天。
 
 ### 从源码运行
 
@@ -111,6 +114,18 @@ npm run tauri build
 - 只有带工具的 assistant 历史才回传 `reasoning_content`，避免为旧回答重复支付思考 token
 
 > 上下文 token 按字符保守估算，实际计费以模型服务商为准。自动压缩摘要可能丢失部分细节，重要内容建议保存在项目或记忆中。
+
+## 费用估算
+
+- 对话标题栏实时显示「本对话 ≈ X 分」，按对话内的真实 usage 与模型价格计算。
+- DeepSeek 使用官方 USD 价格 × 汇率估人民币：Flash 输入（缓存未命中）$0.15–0.30 / 输出 $0.60–1.20；Pro 输入 $0.66–1.32 / 输出 $1.98–3.96（每百万 tokens，谷时–峰时）。
+- 缓存命中单独计价；usage 中的 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` 会进入本地账单。
+- 峰时为工作日北京时间 09:00–12:00、14:00–18:00，其余为谷时；法定节假日暂按工作日计算。
+- 设置 → 用量与费用 可修改 USD→CNY 汇率，并为非 DeepSeek 模型填写峰谷输入/输出单价；未填写时只统计 token。
+- 可关闭用量记录与对话内费用；关闭后不再写入新记录。
+- 官方价格参考：[DeepSeek API Pricing](https://api-docs.deepseek.com/quick_start/pricing)
+
+费用始终为估算值，缓存命中、赠送额度、阶梯价格和实际账单以服务商为准。
 
 ## 连接器与 GitHub
 
@@ -169,6 +184,15 @@ GitHub 当前为只读连接，不支持创建/修改 Issue、提交代码或管
 - MCP 插件以当前 Windows 用户权限在本机运行；每次工具调用都需要你批准
 - GitHub 数据会发送给 GitHub 与所选模型服务；工具结果会进入模型上下文
 
+### 导出与备份
+
+设置 → 数据与备份：
+
+- 导出 JSON：包含对话、消息、项目、记忆和用量；不包含 API Key、GitHub Token、连接器凭据和设置
+- 导入：默认按 ID 合并；也可以开启“覆盖现有数据”清空后恢复
+- 备份文件可能包含隐私内容，请存放在可信位置
+- 局域网自动同步尚未实现；可把备份放入同步盘（OneDrive、坚果云等）手动迁移
+
 ## 架构
 
 ```text
@@ -184,14 +208,15 @@ bridge.ts  ── Tauri IPC ──▶  Rust commands
 
 ```text
 src/
-  components/     聊天、设置、连接器、用量、可视化等 UI
+  components/     聊天、设置、连接器、用量、数据备份、法律门禁、可视化等 UI
   store/          Zustand 状态（app / chat / approvals / toast / confirm）
-  lib/            Tauri IPC bridge、附件、工具函数、插件预设
+  lib/            Tauri IPC bridge、附件、工具函数、插件预设、计费
 src-tauri/src/
   chat.rs         SSE 流式请求、工具调用循环、上下文裁剪
   compression.rs  滚动摘要 / 自动压缩
   connectors.rs   本地 MCP 客户端、工具路由、授权与进程管理
   github.rs       GitHub REST 只读工具与账号验证
+  data.rs         JSON 数据导出与导入
   commands.rs     会话、消息、项目、记忆、设置、用量命令
   memory.rs       自动记忆提取与用量记录
   providers.rs    Provider 配置、HTTP 客户端与错误映射
@@ -211,7 +236,9 @@ scripts/dev/      CDP 驱动、OpenAI / MCP / GitHub Mock 服务
 - 本地 MCP Mock：`initialize`、`tools/list`、授权允许/拒绝、停止、持久化
 - 本地 GitHub REST Mock：Token 验证、Token 不落入 SQLite、仓库/Issue/PR/搜索/文件工具、PR 过滤
 - 上下文压缩：20 条长历史 + 新问题、4k 预算，摘要覆盖 18 条，后续请求只发送摘要 + 4 条消息
-- 用量看板：真实 usage 累计、峰谷重算、单价估算
+- 用量与费用：真实 usage（含缓存命中/未命中）累计、DeepSeek 官方峰谷价与汇率换算、每对话费用实时显示、非 DS 模型价格配置
+- 数据备份：导出 JSON、校验不包含密钥、合并导入、覆盖导入
+- 法律确认：用户协议/隐私说明确认门禁、关于页入口
 - 可视化：Mermaid、双系列柱状图、图片放大
 - 首次配置：完整引导流程、100k 默认上下文、插件环境检测
 
@@ -223,16 +250,29 @@ scripts/dev/      CDP 驱动、OpenAI / MCP / GitHub Mock 服务
 - 自动压缩摘要为模型二次生成，可能遗漏细节
 - 目前仅支持本地 stdio MCP；不支持远程 HTTP/SSE MCP、OAuth 和 MCP resources/prompts
 - 未实现深度研究、语音、图像生成、Canvas、GPTs、定时任务、云同步、多设备与分享
+- **Android APK 尚未发布**：当前机器没有 JDK / Android SDK / NDK；移动端还需要安全存储替代方案、响应式界面和禁用本地 MCP 进程，是独立的移植任务
+- 局域网自动同步尚未实现；目前提供 JSON 导出/导入，可放入 OneDrive、坚果云等同步盘手动迁移
 - 未做多实例互斥、自动更新与代码签名
+
+## 用户协议与隐私
+
+- [用户协议](docs/USER_AGREEMENT.md)
+- [隐私说明](docs/PRIVACY.md)
+
+应用首次使用前会显示确认门禁；同意记录保存在本地设置中。仓库公开后，协议与隐私说明也可以直接在 GitHub 查看。
+
+> 这两份文本是项目初始模板，不构成法律意见。正式公开分发或商业化前，请让执业律师根据你的运营主体、所在地、收费方式和第三方服务条款进行审核；特别是责任限制、赔偿、管辖和消费者权益条款。没有任何协议能完全消除法律风险。
 
 ## Roadmap
 
+- Android 移动端（独立移植：安全存储、响应式 UI、无本地 MCP）
 - QQ 邮箱 / IMAP 连接器与安全授权码管理
 - 远程 MCP、OAuth 与更多 SaaS 连接器
 - GitHub 写操作（创建 Issue、评论、分支与 PR）
+- 局域网自动同步与冲突合并
 - 更细的上下文可视化与真实费用校准
 - 安装包签名、自动更新与崩溃报告
 
 ## 说明
 
-Mind 目前没有选择开源许可证。仓库为私有项目；如需公开或采用特定许可证，请先补充 LICENSE。
+Mind 仓库已公开，但目前没有选择开源许可证；未经权利人许可，请勿再分发或商用。如需采用 MIT / Apache-2.0 等许可证，请先补充 LICENSE 文件。

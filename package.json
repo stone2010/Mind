@@ -1,7 +1,7 @@
 {
   "name": "mind",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Mind — a calm, model-agnostic AI desktop client",
   "scripts": {
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-dialog": "^2.8.4",
     "@tauri-apps/plugin-opener": "^2.5.0",
     "clsx": "^2.1.1",
     "highlight.js": "^11.11.1",

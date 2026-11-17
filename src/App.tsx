@@ -4,6 +4,7 @@ import { systemThemeListener, useAppStore } from "./store/app";
 import { useApprovalStore } from "./store/approvals";
 import { useChatStore } from "./store/chat";
 import { ConnectorApprovalHost } from "./components/ConnectorApproval";
+import { LegalGate } from "./components/LegalGate";
 import { SearchDialog } from "./components/SearchDialog";
 import { ConfirmHost, Toasts } from "./components/Feedback";
 import { ChatView } from "./components/ChatView";
@@ -137,6 +138,7 @@ export default function App() {
 
       <SearchDialog open={searchOpen && !needsOnboarding} onClose={() => setSearchOpen(false)} />
       <ConnectorApprovalHost />
+      <LegalGate />
       <ConfirmHost />
       <Toasts />
     </div>

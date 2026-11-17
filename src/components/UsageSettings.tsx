@@ -1,26 +1,19 @@
-import { BarChart3, Eraser, RefreshCw, Wallet } from "lucide-react";
+import { BarChart3, Eraser, RefreshCw, Scale, Wallet } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, errorMessage } from "../lib/bridge";
+import {
+  DEEPSEEK_PEAK_LABEL,
+  deepseekCnyRows,
+  formatFen,
+  isPeakTime,
+  modelPriceKey,
+  summarizeUsage,
+} from "../lib/pricing";
 import { useAppStore } from "../store/app";
 import { confirmDialog } from "../store/confirm";
 import { pushToast } from "../store/toast";
-import type { UsageLogEntry } from "../types";
+import type { ModelPrice, UsageLogEntry } from "../types";
 import { Button, Field, Input, Switch } from "./ui";
-
-function parseTime(value: string): number {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
-  if (!match) return 0;
-  return Math.min(23, Number(match[1])) * 60 + Math.min(59, Number(match[2]));
-}
-
-function isOffpeak(timestamp: number, start: string, end: string): boolean {
-  const date = new Date(timestamp);
-  const minutes = date.getHours() * 60 + date.getMinutes();
-  const from = parseTime(start);
-  const to = parseTime(end);
-  if (from === to) return false;
-  return from < to ? minutes >= from && minutes < to : minutes >= from || minutes < to;
-}
 
 function dayKey(timestamp: number): string {
   const date = new Date(timestamp);
@@ -71,39 +64,64 @@ function StatCard({
   );
 }
 
+type PriceDraft = {
+  peakInput: string;
+  peakOutput: string;
+  offpeakInput: string;
+  offpeakOutput: string;
+};
+
+const EMPTY_DRAFT: PriceDraft = {
+  peakInput: "0",
+  peakOutput: "0",
+  offpeakInput: "0",
+  offpeakOutput: "0",
+};
+
 export function UsageSettings() {
   const settings = useAppStore((s) => s.settings);
+  const providers = useAppStore((s) => s.providers);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const enabled = settings.usageEnabled;
 
   const [logs, setLogs] = useState<UsageLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [priceDraft, setPriceDraft] = useState({
-    peakInput: String(settings.peakInputPrice),
-    peakOutput: String(settings.peakOutputPrice),
-    offpeakInput: String(settings.offpeakInputPrice),
-    offpeakOutput: String(settings.offpeakOutputPrice),
-    start: settings.offpeakStart,
-    end: settings.offpeakEnd,
-  });
+  const [rateDraft, setRateDraft] = useState(String(settings.usdCnyRate));
+  const [modelDrafts, setModelDrafts] = useState<Record<string, PriceDraft>>({});
+
+  const externalModels = useMemo(
+    () =>
+      providers
+        .filter((p) => p.kind !== "deepseek" && p.id !== "deepseek")
+        .flatMap((provider) =>
+          provider.models.map((model) => ({
+            key: modelPriceKey(provider.id, model.id),
+            providerName: provider.name,
+            modelName: model.label || model.id,
+          })),
+        ),
+    [providers],
+  );
 
   useEffect(() => {
-    setPriceDraft({
-      peakInput: String(settings.peakInputPrice),
-      peakOutput: String(settings.peakOutputPrice),
-      offpeakInput: String(settings.offpeakInputPrice),
-      offpeakOutput: String(settings.offpeakOutputPrice),
-      start: settings.offpeakStart,
-      end: settings.offpeakEnd,
-    });
-  }, [
-    settings.peakInputPrice,
-    settings.peakOutputPrice,
-    settings.offpeakInputPrice,
-    settings.offpeakOutputPrice,
-    settings.offpeakStart,
-    settings.offpeakEnd,
-  ]);
+    setRateDraft(String(settings.usdCnyRate));
+  }, [settings.usdCnyRate]);
+
+  useEffect(() => {
+    const next: Record<string, PriceDraft> = {};
+    for (const item of externalModels) {
+      const price = settings.modelPrices?.[item.key];
+      next[item.key] = price
+        ? {
+            peakInput: String(price.peakInput),
+            peakOutput: String(price.peakOutput),
+            offpeakInput: String(price.offpeakInput),
+            offpeakOutput: String(price.offpeakOutput),
+          }
+        : { ...EMPTY_DRAFT };
+    }
+    setModelDrafts(next);
+  }, [externalModels, settings.modelPrices]);
 
   const load = async () => {
     if (!enabled) {
@@ -125,28 +143,10 @@ export function UsageSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
-  const aggregate = useMemo(() => {
-    const prices = {
-      peakInput: settings.peakInputPrice,
-      peakOutput: settings.peakOutputPrice,
-      offpeakInput: settings.offpeakInputPrice,
-      offpeakOutput: settings.offpeakOutputPrice,
-    };
-    const hasPrice =
-      prices.peakInput > 0 ||
-      prices.peakOutput > 0 ||
-      prices.offpeakInput > 0 ||
-      prices.offpeakOutput > 0;
-    let prompt = 0;
-    let completion = 0;
-    let total = 0;
-    let peakTokens = 0;
-    let offpeakTokens = 0;
-    let peakCost = 0;
-    let offpeakCost = 0;
-    let compactTokens = 0;
-    let memoryTokens = 0;
-    const days = Array.from({ length: 14 }, (_, index) => {
+  const summary = useMemo(() => summarizeUsage(logs, settings), [logs, settings]);
+
+  const days = useMemo(() => {
+    const list = Array.from({ length: 14 }, (_, index) => {
       const date = new Date();
       date.setDate(date.getDate() - (13 - index));
       return {
@@ -156,80 +156,51 @@ export function UsageSettings() {
         offpeak: 0,
       };
     });
-    const byDay = new Map(days.map((day) => [day.key, day]));
-
+    const byDay = new Map(list.map((day) => [day.key, day]));
     for (const log of logs) {
-      const offpeak = isOffpeak(
-        log.createdAt,
-        settings.offpeakStart,
-        settings.offpeakEnd,
-      );
-      const tokens = log.totalTokens || log.promptTokens + log.completionTokens;
-      const cost =
-        (log.promptTokens / 1_000_000) *
-          (offpeak ? prices.offpeakInput : prices.peakInput) +
-        (log.completionTokens / 1_000_000) *
-          (offpeak ? prices.offpeakOutput : prices.peakOutput);
-      prompt += log.promptTokens;
-      completion += log.completionTokens;
-      total += tokens;
-      if (log.kind === "compact") compactTokens += tokens;
-      if (log.kind === "memory") memoryTokens += tokens;
-      if (offpeak) {
-        offpeakTokens += tokens;
-        offpeakCost += cost;
-      } else {
-        peakTokens += tokens;
-        peakCost += cost;
-      }
       const day = byDay.get(dayKey(log.createdAt));
-      if (day) {
-        if (offpeak) day.offpeak += tokens;
-        else day.peak += tokens;
-      }
+      if (!day) continue;
+      const tokens = log.totalTokens || log.promptTokens + log.completionTokens;
+      if (isPeakTime(log.createdAt)) day.peak += tokens;
+      else day.offpeak += tokens;
     }
-    return {
-      hasPrice,
-      prompt,
-      completion,
-      total,
-      peakTokens,
-      offpeakTokens,
-      peakCost,
-      offpeakCost,
-      totalCost: peakCost + offpeakCost,
-      compactTokens,
-      memoryTokens,
-      days,
-    };
-  }, [
-    logs,
-    settings.peakInputPrice,
-    settings.peakOutputPrice,
-    settings.offpeakInputPrice,
-    settings.offpeakOutputPrice,
-    settings.offpeakStart,
-    settings.offpeakEnd,
-  ]);
+    return list;
+  }, [logs]);
 
-  const savePricing = async () => {
+  const maxDay = Math.max(1, ...days.map((day) => day.peak + day.offpeak));
+  const deepseekRows = deepseekCnyRows(settings);
+
+  const saveRate = async () => {
+    const parsed = Number(rateDraft);
+    const value = Number.isFinite(parsed) ? Math.min(20, Math.max(1, parsed)) : 6.6793;
+    setRateDraft(String(value));
+    await updateSettings({ usdCnyRate: value });
+    pushToast({ kind: "success", title: "汇率已保存，费用估算已更新" });
+  };
+
+  const updatePriceDraft = (key: string, patch: Partial<PriceDraft>) => {
+    setModelDrafts((current) => ({
+      ...current,
+      [key]: { ...(current[key] ?? EMPTY_DRAFT), ...patch },
+    }));
+  };
+
+  const saveModelPrices = async () => {
     const parse = (value: string) => {
       const parsed = Number(value);
       return Number.isFinite(parsed) ? Math.max(0, Math.min(10000, parsed)) : 0;
     };
-    const start = /^\d{2}:\d{2}$/.test(priceDraft.start)
-      ? priceDraft.start
-      : "00:30";
-    const end = /^\d{2}:\d{2}$/.test(priceDraft.end) ? priceDraft.end : "08:30";
-    await updateSettings({
-      peakInputPrice: parse(priceDraft.peakInput),
-      peakOutputPrice: parse(priceDraft.peakOutput),
-      offpeakInputPrice: parse(priceDraft.offpeakInput),
-      offpeakOutputPrice: parse(priceDraft.offpeakOutput),
-      offpeakStart: start,
-      offpeakEnd: end,
-    });
-    pushToast({ kind: "success", title: "峰谷时段与单价已保存" });
+    const next: Record<string, ModelPrice> = {};
+    for (const [key, draft] of Object.entries(modelDrafts)) {
+      next[key] = {
+        peakInput: parse(draft.peakInput),
+        peakOutput: parse(draft.peakOutput),
+        offpeakInput: parse(draft.offpeakInput),
+        offpeakOutput: parse(draft.offpeakOutput),
+      };
+    }
+    await updateSettings({ modelPrices: next });
+    pushToast({ kind: "success", title: "非 DeepSeek 模型价格已保存" });
   };
 
   const clearLogs = async () => {
@@ -249,11 +220,6 @@ export function UsageSettings() {
     }
   };
 
-  const maxDay = Math.max(
-    1,
-    ...aggregate.days.map((day) => day.peak + day.offpeak),
-  );
-
   return (
     <section>
       <div>
@@ -261,7 +227,7 @@ export function UsageSettings() {
           用量与费用
         </h2>
         <p className="mt-1 text-[12.5px] leading-5 text-muted">
-          记录模型服务返回的真实 token 用量，并按你填写的峰谷单价估算费用。费用仅供预算参考，最终以服务商账单为准。
+          DeepSeek 默认按官方峰谷价、缓存命中价和美元汇率自动估算；其他模型可按你填写的单价估算。token 用量来自服务商返回的真实 usage。
         </p>
       </div>
 
@@ -269,7 +235,7 @@ export function UsageSettings() {
         <div>
           <div className="text-[13px] font-medium text-ink">记录并展示用量</div>
           <p className="mt-0.5 text-[12px] leading-5 text-muted">
-            关闭后不再写入新的用量记录，也不显示看板；已有记录保留，可随时重新打开。
+            关闭后不再写入新的用量记录，也不显示看板和对话内费用；已有记录保留。
           </p>
         </div>
         <Switch
@@ -292,16 +258,20 @@ export function UsageSettings() {
           <div className="mt-3 grid grid-cols-2 gap-2.5">
             <StatCard
               label="真实 token 用量"
-              value={formatTokens(aggregate.total)}
-              sub={`输入 ${formatTokens(aggregate.prompt)} · 输出 ${formatTokens(aggregate.completion)}`}
+              value={formatTokens(summary.totalTokens)}
+              sub={`输入 ${formatTokens(summary.promptTokens)} · 输出 ${formatTokens(summary.completionTokens)}`}
             />
             <StatCard
               label="估算费用"
-              value={aggregate.hasPrice ? formatMoney(aggregate.totalCost) : "未设置单价"}
+              value={
+                summary.hasUnknownModel
+                  ? "部分未配置"
+                  : `≈${formatFen(summary.totalCost)}`
+              }
               sub={
-                aggregate.hasPrice
-                  ? "按下方峰谷单价估算"
-                  : "填写下方单价后显示费用"
+                summary.hasUnknownModel
+                  ? "有非 DeepSeek 模型未填写价格"
+                  : `${formatMoney(summary.totalCost)} · 点击对话标题栏查看单次对话`
               }
             />
           </div>
@@ -309,22 +279,14 @@ export function UsageSettings() {
           <div className="mt-2.5 grid grid-cols-2 gap-2.5">
             <StatCard
               label="峰时用量"
-              value={formatTokens(aggregate.peakTokens)}
-              sub={
-                aggregate.hasPrice
-                  ? `谷时以外 · 估算 ${formatMoney(aggregate.peakCost)}`
-                  : "谷时以外 · 未设置单价"
-              }
+              value={formatTokens(summary.peakTokens)}
+              sub={`≈${formatFen(summary.peakCost)} · ${DEEPSEEK_PEAK_LABEL}`}
               tone="peak"
             />
             <StatCard
               label="谷时用量"
-              value={formatTokens(aggregate.offpeakTokens)}
-              sub={
-                aggregate.hasPrice
-                  ? `${settings.offpeakStart}–${settings.offpeakEnd} · 估算 ${formatMoney(aggregate.offpeakCost)}`
-                  : `${settings.offpeakStart}–${settings.offpeakEnd} · 未设置单价`
-              }
+              value={formatTokens(summary.offpeakTokens)}
+              sub={`≈${formatFen(summary.offpeakCost)} · 其余时段`}
               tone="offpeak"
             />
           </div>
@@ -334,7 +296,7 @@ export function UsageSettings() {
               <div>
                 <div className="text-[13px] font-medium text-ink">最近 14 天</div>
                 <p className="mt-0.5 text-[11.5px] text-faint">
-                  按本地时间统计；深色为峰时，浅色为谷时。
+                  按北京时间与 DeepSeek 官方峰时窗口统计；深色为峰时，浅色为谷时。
                 </p>
               </div>
               <Button
@@ -348,7 +310,7 @@ export function UsageSettings() {
               </Button>
             </div>
             <div className="mt-4 flex h-36 items-end gap-1.5">
-              {aggregate.days.map((day) => {
+              {days.map((day) => {
                 const peakHeight = (day.peak / maxDay) * 100;
                 const offpeakHeight = (day.offpeak / maxDay) * 100;
                 const total = day.peak + day.offpeak;
@@ -376,9 +338,9 @@ export function UsageSettings() {
                 );
               })}
             </div>
-            {aggregate.total === 0 && (
+            {summary.totalTokens === 0 && (
               <p className="mt-3 text-center text-[11.5px] text-faint">
-                还没有用量记录。发送一条真实模型消息后，这里会显示 token 消耗。
+                还没有用量记录。发送一条真实模型消息后，这里会显示 token 和费用。
               </p>
             )}
           </div>
@@ -386,98 +348,150 @@ export function UsageSettings() {
           <div className="mt-3 rounded-xl border border-line p-4">
             <div className="flex items-center gap-2">
               <Wallet size={14} className="text-accent" />
-              <div className="text-[13px] font-medium text-ink">峰谷单价</div>
+              <div className="text-[13px] font-medium text-ink">DeepSeek 官方价格</div>
+              <span className="rounded border border-accent/25 px-1 py-px text-[9.5px] text-accent">
+                自动
+              </span>
             </div>
             <p className="mt-0.5 text-[11.5px] leading-5 text-muted">
-              单价单位为「元 / 百万 tokens」。DeepSeek 的价格和优惠时段可能调整，请填入你账户当前适用的价格；全为 0 时只统计 token，不显示费用。
+              按官方 USD/百万 tokens 价格 × 汇率估算；峰时价格为谷时的 2 倍，缓存命中单独计价。
             </p>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <Field label="峰时输入">
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={priceDraft.peakInput}
-                  onChange={(e) =>
-                    setPriceDraft({ ...priceDraft, peakInput: e.target.value })
-                  }
-                  className="h-8 text-[12.5px]"
-                />
-              </Field>
-              <Field label="峰时输出">
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={priceDraft.peakOutput}
-                  onChange={(e) =>
-                    setPriceDraft({ ...priceDraft, peakOutput: e.target.value })
-                  }
-                  className="h-8 text-[12.5px]"
-                />
-              </Field>
-              <Field label="谷时输入">
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={priceDraft.offpeakInput}
-                  onChange={(e) =>
-                    setPriceDraft({ ...priceDraft, offpeakInput: e.target.value })
-                  }
-                  className="h-8 text-[12.5px]"
-                />
-              </Field>
-              <Field label="谷时输出">
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={priceDraft.offpeakOutput}
-                  onChange={(e) =>
-                    setPriceDraft({ ...priceDraft, offpeakOutput: e.target.value })
-                  }
-                  className="h-8 text-[12.5px]"
-                />
-              </Field>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[420px] text-[11.5px]">
+                <thead>
+                  <tr className="border-b border-line text-left text-faint">
+                    <th className="pb-1.5 font-normal">模型</th>
+                    <th className="pb-1.5 font-normal">谷时输入</th>
+                    <th className="pb-1.5 font-normal">峰时输入</th>
+                    <th className="pb-1.5 font-normal">谷时输出</th>
+                    <th className="pb-1.5 font-normal">峰时输出</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deepseekRows.map((row) => (
+                    <tr key={row.label} className="border-b border-line/60 last:border-0">
+                      <td className="py-1.5 text-ink">{row.label}</td>
+                      <td className="py-1.5 tabular-nums text-muted">¥{row.offpeakInput.toFixed(2)}</td>
+                      <td className="py-1.5 tabular-nums text-muted">¥{row.peakInput.toFixed(2)}</td>
+                      <td className="py-1.5 tabular-nums text-muted">¥{row.offpeakOutput.toFixed(2)}</td>
+                      <td className="py-1.5 tabular-nums text-muted">¥{row.peakOutput.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="mt-3 flex flex-wrap items-end gap-3">
-              <Field label="谷时开始">
+            <div className="mt-2 flex flex-wrap items-end gap-3">
+              <Field label="USD → CNY 汇率" hint="仅用于费用估算">
                 <Input
-                  type="time"
-                  value={priceDraft.start}
-                  onChange={(e) =>
-                    setPriceDraft({ ...priceDraft, start: e.target.value })
-                  }
-                  className="h-8 w-[110px] text-[12.5px]"
+                  type="number"
+                  min={1}
+                  max={20}
+                  step={0.0001}
+                  value={rateDraft}
+                  onChange={(e) => setRateDraft(e.target.value)}
+                  className="h-8 w-[130px] tabular-nums text-[12.5px]"
                 />
               </Field>
-              <Field label="谷时结束">
-                <Input
-                  type="time"
-                  value={priceDraft.end}
-                  onChange={(e) =>
-                    setPriceDraft({ ...priceDraft, end: e.target.value })
-                  }
-                  className="h-8 w-[110px] text-[12.5px]"
-                />
-              </Field>
-              <Button size="sm" variant="primary" onClick={() => void savePricing()}>
-                保存设置
+              <Button size="sm" variant="secondary" onClick={() => void saveRate()}>
+                保存汇率
               </Button>
+              <span className="flex items-center gap-1 text-[10.5px] text-faint">
+                <Scale size={11} />
+                {DEEPSEEK_PEAK_LABEL}；法定节假日暂按工作日计算
+              </span>
             </div>
-            <p className="mt-2 text-[11px] leading-5 text-faint">
-              默认谷时 00:30–08:30 只是常用预设，不代表服务商当前承诺；请以官方价格页为准。
+            <p className="mt-2 text-[11px] leading-4 text-faint">
+              官方价格可能调整。当前参考 2026-11-17 页面：Flash 输入（缓存未命中）$0.15–0.30 / 输出 $0.60–1.20；Pro 输入 $0.66–1.32 / 输出 $1.98–3.96（$/百万 tokens）。缓存命中价为未命中价的约 2%。
             </p>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-line p-4">
+            <div className="text-[13px] font-medium text-ink">非 DeepSeek 模型价格</div>
+            <p className="mt-0.5 text-[11.5px] leading-5 text-muted">
+              单位为「元 / 百万 tokens」。不填时只统计 token，不估算费用；DeepSeek 模型无需在这里填写。
+            </p>
+            {externalModels.length === 0 ? (
+              <p className="mt-3 rounded-lg border border-dashed border-line px-3 py-4 text-center text-[11.5px] text-faint">
+                当前没有其他 OpenAI 兼容模型。
+              </p>
+            ) : (
+              <div className="mt-3 space-y-2.5">
+                {externalModels.map((item) => {
+                  const draft = modelDrafts[item.key] ?? EMPTY_DRAFT;
+                  return (
+                    <div key={item.key} className="rounded-lg border border-line p-3">
+                      <div className="flex items-center gap-1.5 text-[12px]">
+                        <span className="font-medium text-ink">{item.modelName}</span>
+                        <span className="text-faint">·</span>
+                        <span className="text-muted">{item.providerName}</span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <Field label="峰时输入">
+                          <Input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={draft.peakInput}
+                            onChange={(e) =>
+                              updatePriceDraft(item.key, { peakInput: e.target.value })
+                            }
+                            className="h-7 text-[11.5px]"
+                          />
+                        </Field>
+                        <Field label="峰时输出">
+                          <Input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={draft.peakOutput}
+                            onChange={(e) =>
+                              updatePriceDraft(item.key, { peakOutput: e.target.value })
+                            }
+                            className="h-7 text-[11.5px]"
+                          />
+                        </Field>
+                        <Field label="谷时输入">
+                          <Input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={draft.offpeakInput}
+                            onChange={(e) =>
+                              updatePriceDraft(item.key, { offpeakInput: e.target.value })
+                            }
+                            className="h-7 text-[11.5px]"
+                          />
+                        </Field>
+                        <Field label="谷时输出">
+                          <Input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={draft.offpeakOutput}
+                            onChange={(e) =>
+                              updatePriceDraft(item.key, { offpeakOutput: e.target.value })
+                            }
+                            className="h-7 text-[11.5px]"
+                          />
+                        </Field>
+                      </div>
+                    </div>
+                  );
+                })}
+                <Button size="sm" variant="primary" onClick={() => void saveModelPrices()}>
+                  保存非 DeepSeek 价格
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="mt-3 flex items-center justify-between rounded-xl border border-line px-4 py-3">
             <div className="text-[11.5px] text-faint">
               已读取 {logs.length} 条记录
-              {aggregate.compactTokens > 0 &&
-                ` · 上下文压缩 ${formatTokens(aggregate.compactTokens)}`}
-              {aggregate.memoryTokens > 0 &&
-                ` · 记忆提取 ${formatTokens(aggregate.memoryTokens)}`}
+              {summary.compactTokens > 0 &&
+                ` · 上下文压缩 ${formatTokens(summary.compactTokens)}`}
+              {summary.memoryTokens > 0 &&
+                ` · 记忆提取 ${formatTokens(summary.memoryTokens)}`}
             </div>
             <Button
               size="sm"

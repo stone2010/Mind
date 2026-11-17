@@ -49,14 +49,23 @@ fn record_usage(
         .get("total_tokens")
         .and_then(|v| v.as_u64())
         .unwrap_or((prompt + completion) as u64) as i64;
+    let cache_hit = usage
+        .get("prompt_cache_hit_tokens")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as i64;
+    let cache_miss = usage
+        .get("prompt_cache_miss_tokens")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as i64;
     if total <= 0 {
         return;
     }
     let _ = conn.execute(
         "INSERT OR REPLACE INTO usage_logs
          (id, conversation_id, message_id, provider_id, model_id, kind,
-          prompt_tokens, completion_tokens, total_tokens, created_at)
-         VALUES (?1, ?2, NULL, ?3, ?4, 'memory', ?5, ?6, ?7, ?8)",
+          prompt_tokens, completion_tokens, total_tokens,
+          prompt_cache_hit_tokens, prompt_cache_miss_tokens, created_at)
+         VALUES (?1, ?2, NULL, ?3, ?4, 'memory', ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             Uuid::new_v4().to_string(),
             conversation_id,
@@ -65,6 +74,8 @@ fn record_usage(
             prompt,
             completion,
             total,
+            cache_hit,
+            cache_miss,
             now_millis()
         ],
     );

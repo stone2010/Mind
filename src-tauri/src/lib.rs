@@ -3,6 +3,7 @@ mod commands;
 mod compression;
 mod connectors;
 mod credentials;
+mod data;
 mod db;
 mod github;
 mod memory;
@@ -22,6 +23,7 @@ pub struct AppState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -96,7 +98,10 @@ pub fn run() {
             compression::context_compress,
             commands::db_log_usage,
             commands::db_list_usage,
+            commands::db_conversation_usage,
             commands::db_clear_usage,
+            data::data_export,
+            data::data_import,
             connectors::connectors_get,
             connectors::connector_save,
             connectors::connector_delete,

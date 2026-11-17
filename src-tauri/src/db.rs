@@ -86,6 +86,8 @@ impl Db {
                 prompt_tokens INTEGER NOT NULL DEFAULT 0,
                 completion_tokens INTEGER NOT NULL DEFAULT 0,
                 total_tokens INTEGER NOT NULL DEFAULT 0,
+                prompt_cache_hit_tokens INTEGER NOT NULL DEFAULT 0,
+                prompt_cache_miss_tokens INTEGER NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL
             );
 
@@ -116,6 +118,14 @@ impl Db {
         let _ = conn.execute("ALTER TABLE conversations ADD COLUMN summary TEXT", []);
         let _ = conn.execute(
             "ALTER TABLE conversations ADD COLUMN summary_upto INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE usage_logs ADD COLUMN prompt_cache_hit_tokens INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE usage_logs ADD COLUMN prompt_cache_miss_tokens INTEGER NOT NULL DEFAULT 0",
             [],
         );
         Ok(())

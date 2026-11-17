@@ -292,6 +292,8 @@ const server = createServer((req, res) => {
         prompt_tokens: 18,
         completion_tokens: 42,
         total_tokens: 60,
+        prompt_cache_hit_tokens: 10,
+        prompt_cache_miss_tokens: 8,
         server_tool_use: { tool_search: withSearch ? 1 : 0 },
       },
     });

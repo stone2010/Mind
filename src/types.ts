@@ -175,6 +175,15 @@ export interface TokenUsage {
   promptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
+  promptCacheHitTokens?: number;
+  promptCacheMissTokens?: number;
+}
+
+export interface ModelPrice {
+  peakInput: number;
+  peakOutput: number;
+  offpeakInput: number;
+  offpeakOutput: number;
 }
 
 export interface CompressResult {
@@ -199,6 +208,24 @@ export interface RuntimeInfo {
   uvxVersion?: string;
 }
 
+export interface ExportResult {
+  path: string;
+  conversations: number;
+  messages: number;
+  projects: number;
+  memories: number;
+  usage: number;
+}
+
+export interface ImportResult {
+  conversations: number;
+  messages: number;
+  projects: number;
+  memories: number;
+  usage: number;
+  replaced: boolean;
+}
+
 export interface UsageLogEntry {
   id: string;
   conversationId?: string | null;
@@ -209,6 +236,8 @@ export interface UsageLogEntry {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  promptCacheHitTokens?: number;
+  promptCacheMissTokens?: number;
   createdAt: number;
 }
 
@@ -251,12 +280,9 @@ export interface AppSettings {
   useMemory: boolean;
   autoMemory: boolean;
   usageEnabled: boolean;
-  peakInputPrice: number;
-  peakOutputPrice: number;
-  offpeakInputPrice: number;
-  offpeakOutputPrice: number;
-  offpeakStart: string;
-  offpeakEnd: string;
+  usdCnyRate: number;
+  modelPrices: Record<string, ModelPrice>;
+  legalAccepted: string;
   demoMode: boolean;
   onboarded: boolean;
   sidebarCollapsed: boolean;
@@ -274,12 +300,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   useMemory: true,
   autoMemory: false,
   usageEnabled: true,
-  peakInputPrice: 0,
-  peakOutputPrice: 0,
-  offpeakInputPrice: 0,
-  offpeakOutputPrice: 0,
-  offpeakStart: "00:30",
-  offpeakEnd: "08:30",
+  usdCnyRate: 6.6793,
+  modelPrices: {},
+  legalAccepted: "",
   demoMode: false,
   onboarded: false,
   sidebarCollapsed: false,

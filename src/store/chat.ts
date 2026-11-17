@@ -11,6 +11,7 @@ import type {
   MessageStatus,
   ProviderError,
   TokenUsage,
+  UsageLogEntry,
 } from "../types";
 import { useAppStore } from "./app";
 import { useApprovalStore } from "./approvals";
@@ -41,6 +42,7 @@ interface ChatStore {
   streaming: StreamingState | null;
   stopping: boolean;
   compacting: boolean;
+  usageByConversation: Record<string, UsageLogEntry[]>;
 
   bootstrap: () => Promise<void>;
   loadConversations: () => Promise<void>;
@@ -57,6 +59,7 @@ interface ChatStore {
   moveToProject: (id: string, projectId: string | null) => Promise<void>;
   deleteConversation: (id: string) => Promise<void>;
   setConversationModel: (id: string, modelId: string) => Promise<void>;
+  refreshConversationUsage: (id: string) => Promise<void>;
 }
 
 let contentBuf = "";
@@ -243,8 +246,13 @@ async function compressIfNeeded(
           promptTokens: usage.promptTokens ?? 0,
           completionTokens: usage.completionTokens ?? 0,
           totalTokens: usage.totalTokens ?? total,
+          promptCacheHitTokens: usage.promptCacheHitTokens ?? 0,
+          promptCacheMissTokens: usage.promptCacheMissTokens ?? 0,
           createdAt: Date.now(),
         })
+        .then(() =>
+          useChatStore.getState().refreshConversationUsage(conversationId),
+        )
         .catch(() => {});
     }
     const nextSummary = result.summary.trim();
@@ -453,8 +461,15 @@ function finalize(status: MessageStatus, error?: ProviderError) {
         promptTokens: usage.promptTokens ?? 0,
         completionTokens: usage.completionTokens ?? 0,
         totalTokens: usage.totalTokens ?? totalUsage,
+        promptCacheHitTokens: usage.promptCacheHitTokens ?? 0,
+        promptCacheMissTokens: usage.promptCacheMissTokens ?? 0,
         createdAt: Date.now(),
       })
+      .then(() =>
+        useChatStore
+          .getState()
+          .refreshConversationUsage(streaming.conversationId),
+      )
       .catch(() => {});
   }
   useApprovalStore.getState().clear(streaming.requestId);
@@ -523,6 +538,12 @@ function handleEvent(event: ChatEvent) {
             completionTokens:
               (previous.completionTokens ?? 0) + (usage.completionTokens ?? 0),
             totalTokens: (previous.totalTokens ?? 0) + (usage.totalTokens ?? 0),
+            promptCacheHitTokens:
+              (previous.promptCacheHitTokens ?? 0) +
+              (usage.promptCacheHitTokens ?? 0),
+            promptCacheMissTokens:
+              (previous.promptCacheMissTokens ?? 0) +
+              (usage.promptCacheMissTokens ?? 0),
           },
         },
       });
@@ -758,6 +779,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   streaming: null,
   stopping: false,
   compacting: false,
+  usageByConversation: {},
 
   bootstrap: async () => {
     if (!listenerReady) {
@@ -801,6 +823,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         messages: { ...s.messages, [id]: normalized },
         loading: false,
       }));
+      void get().refreshConversationUsage(id);
     } catch (err) {
       set({ loading: false });
       pushToast({ kind: "error", title: "无法加载对话", detail: errorMessage(err) });
@@ -1035,6 +1058,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       await api.setConversationModel(id, modelId);
       set((s) => ({
         conversations: s.conversations.map((c) => (c.id === id ? { ...c, modelId } : c)),
+      }));
+    } catch {
+      /* non-critical */
+    }
+  },
+
+  refreshConversationUsage: async (id) => {
+    try {
+      const logs = await api.listConversationUsage(id);
+      set((s) => ({
+        usageByConversation: { ...s.usageByConversation, [id]: logs },
       }));
     } catch {
       /* non-critical */

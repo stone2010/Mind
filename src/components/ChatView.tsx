@@ -6,6 +6,7 @@ import { useChatStore } from "../store/chat";
 import { pushToast } from "../store/toast";
 import type { Attachment, Message } from "../types";
 import { Composer } from "./Composer";
+import { ConversationCost } from "./ConversationCost";
 import { MessageList } from "./MessageList";
 
 const EMPTY: Message[] = [];
@@ -139,6 +140,7 @@ export function ChatView() {
           </span>
         )}
         <div className="flex-1" />
+        <ConversationCost conversationId={activeId} />
         {settings.demoMode && (
           <span className="shrink-0 rounded-md border border-line bg-sidebar px-2 py-0.5 text-[11px] text-muted">
             演示模式

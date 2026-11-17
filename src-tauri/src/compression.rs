@@ -160,6 +160,14 @@ pub async fn context_compress(
             .get("total_tokens")
             .and_then(|v| v.as_u64())
             .map(|v| v as u32),
+        prompt_cache_hit_tokens: usage
+            .get("prompt_cache_hit_tokens")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32),
+        prompt_cache_miss_tokens: usage
+            .get("prompt_cache_miss_tokens")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32),
     });
 
     Ok(CompressResult {

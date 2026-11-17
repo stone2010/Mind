@@ -242,6 +242,10 @@ pub struct Usage {
     pub completion_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_hit_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_miss_tokens: Option<u32>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -287,6 +291,10 @@ pub struct UsageLog {
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
     pub total_tokens: i64,
+    #[serde(default)]
+    pub prompt_cache_hit_tokens: i64,
+    #[serde(default)]
+    pub prompt_cache_miss_tokens: i64,
     pub created_at: i64,
 }
 

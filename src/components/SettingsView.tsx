@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Copy,
   Cpu,
+  DatabaseBackup,
   ExternalLink,
   Eye,
   EyeOff,
@@ -31,6 +32,7 @@ import { confirmDialog } from "../store/confirm";
 import { pushToast } from "../store/toast";
 import type { AppInfo, Memory, TestResult } from "../types";
 import { ConnectorSettings } from "./ConnectorSettings";
+import { DataSettings } from "./DataSettings";
 import { DeveloperSettings } from "./DeveloperSettings";
 import { UsageSettings } from "./UsageSettings";
 import { Button, Field, IconButton, Input, Modal, Segmented, Switch, Textarea } from "./ui";
@@ -769,12 +771,38 @@ function AboutPanel() {
         Mind 是一款模型无关的桌面 AI 客户端。聊天记录只保存在本机，API Key 保存在
         Windows 凭据管理器中。
       </p>
-      <div className="mt-4 flex items-center gap-3 text-[12px]">
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-[12px]">
         <button
           className="flex items-center gap-1 text-accent hover:underline"
           onClick={() => api.openExternal("https://platform.deepseek.com").catch(() => {})}
         >
           DeepSeek 开放平台
+          <ExternalLink size={11} />
+        </button>
+        <span className="text-faint">·</span>
+        <button
+          className="flex items-center gap-1 text-accent hover:underline"
+          onClick={() =>
+            api
+              .openExternal(
+                "https://github.com/stone2010/Mind/blob/main/docs/USER_AGREEMENT.md",
+              )
+              .catch(() => {})
+          }
+        >
+          用户协议
+          <ExternalLink size={11} />
+        </button>
+        <span className="text-faint">·</span>
+        <button
+          className="flex items-center gap-1 text-accent hover:underline"
+          onClick={() =>
+            api
+              .openExternal("https://github.com/stone2010/Mind/blob/main/docs/PRIVACY.md")
+              .catch(() => {})
+          }
+        >
+          隐私说明
           <ExternalLink size={11} />
         </button>
         <span className="text-faint">·</span>
@@ -790,6 +818,7 @@ const NAV_ITEMS: { id: SettingsSection; label: string; icon: typeof Info }[] = [
   { id: "connectors", label: "连接器", icon: Plug },
   { id: "memory", label: "记忆", icon: Brain },
   { id: "usage", label: "用量与费用", icon: Gauge },
+  { id: "data", label: "数据与备份", icon: DatabaseBackup },
   { id: "about", label: "关于", icon: Info },
 ];
 
@@ -869,6 +898,7 @@ export function SettingsView() {
           {section === "connectors" && <ConnectorSettings />}
           {section === "memory" && <MemoryPanel />}
           {section === "usage" && <UsageSettings />}
+          {section === "data" && <DataSettings />}
           {section === "about" && <AboutPanel />}
           {section === "developer" && <DeveloperSettings />}
         </div>

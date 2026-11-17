@@ -22,6 +22,7 @@ export type SettingsSection =
   | "connectors"
   | "memory"
   | "usage"
+  | "data"
   | "about"
   | "developer";
 

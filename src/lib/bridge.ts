@@ -10,7 +10,9 @@ import type {
   ConnectorConfig,
   ConnectorInfo,
   ConnectorToolInfo,
+  ExportResult,
   GithubInfo,
+  ImportResult,
   Conversation,
   Memory,
   Message,
@@ -96,7 +98,13 @@ export const api = {
 
   logUsage: (log: UsageLogEntry) => invoke<void>("db_log_usage", { log }),
   listUsage: (limit = 2000) => invoke<UsageLogEntry[]>("db_list_usage", { limit }),
+  listConversationUsage: (conversationId: string, limit = 1000) =>
+    invoke<UsageLogEntry[]>("db_conversation_usage", { conversationId, limit }),
   clearUsage: () => invoke<void>("db_clear_usage"),
+
+  dataExport: (path: string) => invoke<ExportResult>("data_export", { path }),
+  dataImport: (path: string, replace: boolean) =>
+    invoke<ImportResult>("data_import", { path, replace }),
 
   listProjects: () => invoke<Project[]>("db_list_projects"),
   createProject: (name: string, description?: string | null) =>

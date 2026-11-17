@@ -779,6 +779,8 @@ pub fn db_log_usage(state: State<AppState>, log: UsageLog) -> Result<(), String>
     } else {
         prompt + completion
     };
+    let cache_hit = log.prompt_cache_hit_tokens.max(0).min(100_000_000);
+    let cache_miss = log.prompt_cache_miss_tokens.max(0).min(100_000_000);
     let id = if log.id.trim().is_empty() {
         new_id()
     } else {
@@ -798,8 +800,9 @@ pub fn db_log_usage(state: State<AppState>, log: UsageLog) -> Result<(), String>
     conn.execute(
         "INSERT OR REPLACE INTO usage_logs
          (id, conversation_id, message_id, provider_id, model_id, kind,
-          prompt_tokens, completion_tokens, total_tokens, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+          prompt_tokens, completion_tokens, total_tokens,
+          prompt_cache_hit_tokens, prompt_cache_miss_tokens, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             id,
             log.conversation_id,
@@ -810,6 +813,8 @@ pub fn db_log_usage(state: State<AppState>, log: UsageLog) -> Result<(), String>
             prompt,
             completion,
             total,
+            cache_hit,
+            cache_miss,
             created_at
         ],
     )
@@ -827,7 +832,8 @@ pub fn db_list_usage(
     let mut stmt = conn
         .prepare(
             "SELECT id, conversation_id, message_id, provider_id, model_id, kind,
-                    prompt_tokens, completion_tokens, total_tokens, created_at
+                    prompt_tokens, completion_tokens, total_tokens,
+                    prompt_cache_hit_tokens, prompt_cache_miss_tokens, created_at
              FROM usage_logs ORDER BY created_at DESC LIMIT ?1",
         )
         .map_err(serr)?;
@@ -843,7 +849,47 @@ pub fn db_list_usage(
                 prompt_tokens: r.get(6)?,
                 completion_tokens: r.get(7)?,
                 total_tokens: r.get(8)?,
-                created_at: r.get(9)?,
+                prompt_cache_hit_tokens: r.get(9)?,
+                prompt_cache_miss_tokens: r.get(10)?,
+                created_at: r.get(11)?,
+            })
+        })
+        .map_err(serr)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(serr)
+}
+
+#[tauri::command]
+pub fn db_conversation_usage(
+    state: State<AppState>,
+    conversation_id: String,
+    limit: Option<u32>,
+) -> Result<Vec<UsageLog>, String> {
+    let limit = limit.unwrap_or(1000).clamp(1, 5000);
+    let conn = state.db.conn.lock().unwrap();
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, conversation_id, message_id, provider_id, model_id, kind,
+                    prompt_tokens, completion_tokens, total_tokens,
+                    prompt_cache_hit_tokens, prompt_cache_miss_tokens, created_at
+             FROM usage_logs WHERE conversation_id = ?1
+             ORDER BY created_at ASC LIMIT ?2",
+        )
+        .map_err(serr)?;
+    let rows = stmt
+        .query_map(params![conversation_id, limit], |r| {
+            Ok(UsageLog {
+                id: r.get(0)?,
+                conversation_id: r.get(1)?,
+                message_id: r.get(2)?,
+                provider_id: r.get(3)?,
+                model_id: r.get(4)?,
+                kind: r.get(5)?,
+                prompt_tokens: r.get(6)?,
+                completion_tokens: r.get(7)?,
+                total_tokens: r.get(8)?,
+                prompt_cache_hit_tokens: r.get(9)?,
+                prompt_cache_miss_tokens: r.get(10)?,
+                created_at: r.get(11)?,
             })
         })
         .map_err(serr)?;
