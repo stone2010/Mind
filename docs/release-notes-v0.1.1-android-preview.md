@@ -49,7 +49,7 @@ npx tauri android build --apk --debug --target aarch64
 src-tauri/gen/android/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk
 ```
 
-Windows 未开启开发者模式时，Tauri CLI 会在创建原生库符号链接时失败；可以开启开发者模式，或手动把 `src-tauri/target/aarch64-linux-android/debug/libmind_lib.so` 复制到 `src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a/`，再运行：
+Windows 未开启开发者模式时，Tauri CLI 会在创建原生库符号链接时失败。先开启开发者模式；如果无法开启，需要先运行一次 `npx tauri android init --ci` 和 `npx tauri android build --apk --debug --target aarch64`，让 CLI 生成 `tauri.settings.gradle`、`tauri.build.gradle.kts` 和 `assets/tauri.conf.json`（即使最后在符号链接处失败），然后手动把 `src-tauri/target/aarch64-linux-android/debug/libmind_lib.so` 复制到 `src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a/`，再运行：
 
 ```bash
 cd src-tauri/gen/android
