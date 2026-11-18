@@ -8,7 +8,8 @@
 - 架构：arm64-v8a（绝大多数近年的 Android 手机）
 - 最低系统：Android 7.0（API 24）
 - 构建类型：debug，使用 Android 调试签名；未使用正式发布密钥签名
-- SHA256：构建完成后补充
+- 大小：30,358,486 字节（约 29.0 MB）
+- SHA256：`9ce0ba2851778fc7d2a98aaca18f9633f5168c8978dd0d958a86c4d837a83f4e`
 
 ## 已实现
 
@@ -45,7 +46,12 @@ npx tauri android build --apk --debug --target aarch64
 产物位于：
 
 ```text
-src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+src-tauri/gen/android/app/build/outputs/apk/arm64/debug/app-arm64-debug.apk
 ```
 
-请以实际构建输出路径为准。
+Windows 未开启开发者模式时，Tauri CLI 会在创建原生库符号链接时失败。先开启开发者模式；如果无法开启，需要先运行一次 `npx tauri android init --ci` 和 `npx tauri android build --apk --debug --target aarch64`，让 CLI 生成 `tauri.settings.gradle`、`tauri.build.gradle.kts` 和 `assets/tauri.conf.json`（即使最后在符号链接处失败），然后手动把 `src-tauri/target/aarch64-linux-android/debug/libmind_lib.so` 复制到 `src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a/`，再运行：
+
+```bash
+cd src-tauri/gen/android
+./gradlew assembleArm64Debug -x rustBuildArm64Debug -x rustBuildUniversalDebug
+```

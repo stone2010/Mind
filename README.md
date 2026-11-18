@@ -83,6 +83,13 @@ Android 版使用同一套 React UI 和 Rust 后端，通过 Tauri 2 打包为 A
 
 下载：[Android 预览 APK](https://github.com/stone2010/Mind/releases/tag/v0.1.1-android-preview)
 
+<p align="center">
+  <img src="docs/screenshots/android-chat.png" width="30%" alt="移动端聊天" />
+  <img src="docs/screenshots/android-drawer.png" width="30%" alt="移动端侧栏" />
+  <img src="docs/screenshots/android-connectors.png" width="30%" alt="移动端连接器" />
+</p>
+
+> 以上为 390×844 的移动布局预览（桌面 WebView 模拟 Android 视口与 UA），不是 Android 真机截图。
 移动端已适配：
 
 - 抽屉式历史侧栏与移动端设置导航
@@ -134,7 +141,7 @@ npm run tauri build
 npx tauri android build --apk --debug --target aarch64
 ```
 
-首次构建前如果还没有 `src-tauri/gen/android`，先运行 `npx tauri android init --ci`。
+首次构建前如果还没有 `src-tauri/gen/android`，先运行 `npx tauri android init --ci`。Windows 未开启“开发者模式”时，Tauri CLI 无法为原生库创建符号链接；需要在系统设置中开启开发者模式，或直接使用 Gradle 打包 `assembleArm64Debug` 并跳过 Rust 构建任务（详见 [Android 预览版说明](docs/release-notes-v0.1.1-android-preview.md)）。
 
 ## 上下文与省 token
 
@@ -288,10 +295,12 @@ scripts/dev/      CDP 驱动、OpenAI / MCP / GitHub Mock 服务
 - 本地 GitHub REST Mock：Token 验证、Token 不落入 SQLite、仓库/Issue/PR/搜索/文件工具、PR 过滤
 - 上下文压缩：20 条长历史 + 新问题、4k 预算，摘要覆盖 18 条，后续请求只发送摘要 + 4 条消息
 - 用量与费用：真实 usage（含缓存命中/未命中）累计、DeepSeek 官方峰谷价与汇率换算、每对话费用实时显示、非 DS 模型价格配置
-- 数据备份：导出 JSON、校验不包含密钥、合并导入、覆盖导入
+- 数据备份：导出 JSON、校验不包含密钥、合并导入、覆盖导入；Android 模式的 JSON 导出与文件导入入口
 - 法律确认：用户协议/隐私说明确认门禁、关于页入口
 - 可视化：Mermaid、双系列柱状图、图片放大
 - 首次配置：完整引导流程、100k 默认上下文、插件环境检测
+- 移动布局：390×844 视口 + Android UA 下验证抽屉侧栏、移动设置导航、Android 连接器限制、数据备份入口，页面无横向溢出
+- Android APK：编译成功，包名 `com.mind.desktop`、版本 0.1.1、minSdk 24、targetSdk 36，包含 arm64 原生库并通过调试签名校验
 
 未验证 / 已知限制：
 

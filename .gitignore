@@ -11,5 +11,8 @@ src-tauri/gen/schemas
 *.db-wal
 *.db-shm
 *.pem
+*.apk
+*.keystore
+artifacts/
 .DS_Store
 Thumbs.db

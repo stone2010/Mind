@@ -48,7 +48,7 @@
 
 - 未使用真实 DeepSeek Key 发起收费请求；真实账单以 DeepSeek 为准。
 - 未使用真实 GitHub Token 连接 GitHub.com。
-- Android 版尚未发布：当前构建环境没有 JDK/Android SDK/NDK，移动端还需安全存储、响应式界面和移除本地 MCP 进程。
+- Android 预览版已单独发布，见 [Android 预览说明](release-notes-v0.1.1-android-preview.md)；它使用会话内存保存密钥，不支持本地 MCP，且尚未在真机验证。
 - 局域网自动同步未实现。
 - 用户协议与隐私说明是项目模板，不构成法律意见；正式分发/商用前请由执业律师按运营主体审核。
 - 安装包未签名，暂无自动更新。
