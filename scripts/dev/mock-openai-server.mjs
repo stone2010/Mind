@@ -70,11 +70,16 @@ const server = createServer((req, res) => {
     const isMemoryCall = (parsed.messages || []).some(
       (m) => m.role === "system" && String(m.content).includes("自动记忆提取器"),
     );
+    const memoryInjected = (parsed.messages || []).some(
+      (m) =>
+        m.role === "system" &&
+        String(m.content).includes("以下是关于用户的长期记忆"),
+    );
     const toolResults = Array.isArray(parsed.messages)
       ? parsed.messages.filter((m) => m.role === "tool")
       : [];
     console.log(
-      `[mock] auth=${req.headers.authorization ? "present" : "MISSING"} model=${parsed.model} stream=${parsed.stream} memory=${isMemoryCall} messages=${parsed.messages?.length} tools=${tools.join(",") || "none"} toolHistory=${assistants.filter((m) => m.server_tool_calls).length} reasoningHistory=${assistants.filter((m) => m.reasoning_content).length} toolResults=${toolResults.length} file=${String(lastUser?.content).includes("<file name=")}`,
+      `[mock] auth=${req.headers.authorization ? "present" : "MISSING"} model=${parsed.model} stream=${parsed.stream} memory=${isMemoryCall} memoryInjected=${memoryInjected} messages=${parsed.messages?.length} tools=${tools.join(",") || "none"} toolHistory=${assistants.filter((m) => m.server_tool_calls).length} reasoningHistory=${assistants.filter((m) => m.reasoning_content).length} toolResults=${toolResults.length} file=${String(lastUser?.content).includes("<file name=")}`,
     );
     if (lastUser) console.log("[mock] last message:", JSON.stringify(lastUser).slice(0, 260));
     if (toolResults.length) {

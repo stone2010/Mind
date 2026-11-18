@@ -20,6 +20,7 @@ pub struct AppState {
     pub approvals: connectors::ApprovalRegistry,
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -101,7 +102,9 @@ pub fn run() {
             commands::db_conversation_usage,
             commands::db_clear_usage,
             data::data_export,
+            data::data_export_json,
             data::data_import,
+            data::data_import_json,
             connectors::connectors_get,
             connectors::connector_save,
             connectors::connector_delete,

@@ -157,6 +157,7 @@ export interface ChatRequest {
   maxTokens?: number | null;
   contextTokens: number;
   summary?: string | null;
+  systemPrompt?: string | null;
 }
 
 export interface ProviderError {
@@ -277,7 +278,6 @@ export interface AppSettings {
   connectors: boolean;
   contextTokens: number;
   autoCompress: boolean;
-  useMemory: boolean;
   autoMemory: boolean;
   usageEnabled: boolean;
   usdCnyRate: number;
@@ -286,6 +286,21 @@ export interface AppSettings {
   demoMode: boolean;
   onboarded: boolean;
   sidebarCollapsed: boolean;
+  clarify: boolean;
+  visualHints: boolean;
+  customInstructions?: string;
+  /** 聊天娱乐模式总开关：默认 false，关闭时连选项都不出现 */
+  chatMode: boolean;
+  /** 聊天娱乐模式是否已被用户确认过风险（避免重复弹窗） */
+  chatModeAck: boolean;
+  /** 跨对话长期记忆总开关（是否注入记忆到对话） */
+  longTermMemory: boolean;
+  /** 记忆注入模式：recall = 按当前问题挑相关记忆（省 token）；recent = 注入最近记忆 */
+  memoryRecall: "recall" | "recent";
+  /** 设置迁移版本；v2 起自动记忆默认开启，且不再受“注入记忆”开关影响 */
+  memoryVersion: number;
+  /** 旧版字段，仅用于设置迁移，勿再使用 */
+  useMemory?: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -297,8 +312,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   connectors: true,
   contextTokens: 100000,
   autoCompress: true,
-  useMemory: true,
-  autoMemory: false,
+  autoMemory: true,
   usageEnabled: true,
   usdCnyRate: 6.6793,
   modelPrices: {},
@@ -306,4 +320,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   demoMode: false,
   onboarded: false,
   sidebarCollapsed: false,
+  clarify: true,
+  visualHints: true,
+  customInstructions: "",
+  chatMode: false,
+  chatModeAck: false,
+  longTermMemory: true,
+  memoryRecall: "recent",
+  memoryVersion: 2,
 };

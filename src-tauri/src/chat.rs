@@ -362,15 +362,26 @@ fn trim_history(turns: Vec<Value>, budget: usize) -> Vec<Value> {
 
 fn build_messages(request: &ChatRequest, model: &ModelConfig, use_tools: bool) -> Vec<Value> {
     let mut system_messages: Vec<Value> = Vec::new();
+    if let Some(prompt) = request
+        .system_prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        system_messages.push(json!({"role": "system", "content": prompt}));
+    }
     let memory_cap = if request.context_tokens == 0 {
-        1600
+        2400
     } else {
-        ((request.context_tokens as usize) / 4).clamp(200, 1200)
+        // Long-term cross-conversation memory: keep the budget at about a
+        // quarter of the context window (capped) and allow up to 24 recent
+        // memories of 200 chars each, so older facts still surface.
+        ((request.context_tokens as usize) / 4).clamp(400, 2400)
     };
     let mut memory_lines: Vec<String> = Vec::new();
     let mut used_chars = 0usize;
     for memory in &request.memories {
-        if memory_lines.len() >= 12 || used_chars >= memory_cap {
+        if memory_lines.len() >= 24 || used_chars >= memory_cap {
             break;
         }
         let trimmed = memory.trim();
@@ -389,7 +400,7 @@ fn build_messages(request: &ChatRequest, model: &ModelConfig, use_tools: bool) -
         system_messages.push(json!({
             "role": "system",
             "content": format!(
-                "以下是关于用户的长期记忆，回答时酌情参考，不要主动提及：\n{}",
+                "以下是关于用户的长期记忆（来自历史对话），回答时酌情参考、自然地融入，不要主动复述，也不要让用户察觉你在『回忆』：\n{}",
                 memory_lines.join("\n")
             )
         }));
@@ -1287,6 +1298,7 @@ mod context_tests {
             max_tokens: None,
             context_tokens,
             summary: None,
+            system_prompt: None,
         }
     }
 
@@ -1373,15 +1385,52 @@ mod context_tests {
     #[test]
     fn memory_injection_is_capped() {
         let mut request = test_request(vec![test_turn("user", "hi")], 8000);
-        request.memories = (0..15)
+        request.memories = (0..30)
             .map(|index| format!("记忆{index}：{}", "内容".repeat(150)))
             .collect();
         let out = build_messages(&request, &test_model(), false);
         let system = out.first().expect("memory system message");
         assert_eq!(system["role"].as_str(), Some("system"));
         let content = system["content"].as_str().unwrap_or_default();
-        assert!(content.chars().count() <= 1400);
-        assert!(content.matches("- ").count() <= 12);
+        // 8k context → cap = 8000/4 = 2000; must stay within it.
+        assert!(content.chars().count() <= 2000 + 200, "memory block too large");
+        assert!(content.matches("- ").count() <= 24, "too many memory lines");
+    }
+
+    #[test]
+    fn system_prompt_is_first_message_when_set() {
+        let mut request = test_request(vec![test_turn("user", "hi")], 8000);
+        request.system_prompt = Some("你是 Mind 的 AI 助手。".into());
+        let out = build_messages(&request, &test_model(), false);
+        assert_eq!(out[0]["role"].as_str(), Some("system"));
+        assert_eq!(
+            out[0]["content"].as_str(),
+            Some("你是 Mind 的 AI 助手。")
+        );
+        assert_eq!(out[1]["role"].as_str(), Some("user"));
+    }
+
+    #[test]
+    fn system_prompt_is_skipped_when_empty() {
+        let mut request = test_request(vec![test_turn("user", "hi")], 8000);
+        request.system_prompt = Some("   ".into());
+        let out = build_messages(&request, &test_model(), false);
+        assert_eq!(out[0]["role"].as_str(), Some("user"));
+    }
+
+    #[test]
+    fn system_prompt_counts_towards_context_budget() {
+        let mut request = test_request(vec![test_turn("user", "hi")], 200);
+        // A long system prompt squeezes the history budget: the user turn
+        // ("hi") should be evicted when the prompt alone fills the budget.
+        request.system_prompt = Some("字".repeat(150));
+        let out = build_messages(&request, &test_model(), false);
+        let total: usize = out.iter().map(message_tokens).sum();
+        assert!(total <= 200, "estimated input was {total} tokens");
+        assert!(
+            out.iter().any(|m| m["role"] == "system"),
+            "system prompt must survive trimming"
+        );
     }
 
     #[test]

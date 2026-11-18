@@ -89,6 +89,49 @@ fn normalize(text: &str) -> String {
         .to_lowercase()
 }
 
+fn similarity(a: &str, b: &str) -> f32 {
+    use std::collections::HashSet;
+
+    let left = normalize(a);
+    let right = normalize(b);
+    if left == right {
+        return 1.0;
+    }
+    let left_chars: Vec<char> = left.chars().collect();
+    let right_chars: Vec<char> = right.chars().collect();
+    if left_chars.len() < 2 || right_chars.len() < 2 {
+        return 0.0;
+    }
+
+    let jaccard = |a: HashSet<String>, b: HashSet<String>| {
+        let inter = a.intersection(&b).count() as f32;
+        let union = a.union(&b).count() as f32;
+        if union == 0.0 {
+            0.0
+        } else {
+            inter / union
+        }
+    };
+    let chars_a: HashSet<String> = left_chars.iter().map(|c| c.to_string()).collect();
+    let chars_b: HashSet<String> = right_chars.iter().map(|c| c.to_string()).collect();
+    let bigrams_a: HashSet<String> = left_chars
+        .windows(2)
+        .map(|w| w.iter().collect())
+        .collect();
+    let bigrams_b: HashSet<String> = right_chars
+        .windows(2)
+        .map(|w| w.iter().collect())
+        .collect();
+
+    // Character overlap catches Chinese rephrasing; bigram overlap keeps
+    // unrelated sentences that share common characters apart.
+    jaccard(chars_a, chars_b) * 0.4 + jaccard(bigrams_a, bigrams_b) * 0.6
+}
+
+fn is_near_duplicate(a: &str, b: &str) -> bool {
+    similarity(a, b) >= 0.85
+}
+
 fn build_prompt(existing: &[String], messages: &[ChatTurn]) -> String {
     let existing_text = if existing.is_empty() {
         "（无）".to_string()
@@ -180,7 +223,7 @@ fn parse_candidates(text: &str, existing: &[String]) -> Vec<String> {
         vec![]
     };
 
-    let mut seen: Vec<String> = existing.iter().map(|m| normalize(m)).collect();
+    let mut seen: Vec<String> = existing.to_vec();
     let mut out = Vec::new();
     for item in items {
         let trimmed = item.trim().trim_matches('"').trim();
@@ -198,11 +241,12 @@ fn parse_candidates(text: &str, existing: &[String]) -> Vec<String> {
         {
             continue;
         }
-        let key = normalize(&content);
-        if key.is_empty() || seen.iter().any(|s| s == &key) {
+        if normalize(&content).is_empty()
+            || seen.iter().any(|s| is_near_duplicate(s, &content))
+        {
             continue;
         }
-        seen.push(key);
+        seen.push(content.clone());
         out.push(content);
         if out.len() >= 3 {
             break;
@@ -245,7 +289,18 @@ pub async fn memory_auto_extract(
             .map(|m| m.id.clone())
             .unwrap_or_else(|| model_id.clone())
     } else {
-        model_id.clone()
+        // 非 DeepSeek：优先用最轻量模型（flash/mini/hairo 等），否则用当前模型
+        provider
+            .models
+            .iter()
+            .find(|m| {
+                let id = m.id.to_lowercase();
+                id.contains("flash")
+                    || id.contains("mini")
+                    || id.contains("haiku")
+            })
+            .map(|m| m.id.clone())
+            .unwrap_or_else(|| model_id.clone())
     };
     let api_key = credentials::get_api_key(&provider.id)
         .ok_or_else(|| "尚未配置 API Key".to_string())?;
@@ -339,4 +394,34 @@ pub async fn memory_auto_extract(
         inserted.push(memory);
     }
     Ok(inserted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn near_duplicate_memories_are_filtered() {
+        let out = parse_candidates(
+            r#"{"memories":["用户偏好简洁的中文回答。","用户偏好简洁的中文回答","用户正在开发 Mind"]}"#,
+            &["用户偏好简洁的中文回答".into()],
+        );
+        assert_eq!(out, vec!["用户正在开发 Mind"]);
+    }
+
+    #[test]
+    fn candidates_are_limited_and_filter_secrets() {
+        let out = parse_candidates(
+            r#"{"memories":["用户是产品经理","我的 API key 是 sk-secret","用户在开发 Mind","用户喜欢中文","第四条第内容"]}"#,
+            &[],
+        );
+        assert_eq!(out.len(), 3);
+        assert!(!out.iter().any(|m| m.contains("sk-secret")));
+    }
+
+    #[test]
+    fn plain_array_and_fenced_json_are_supported() {
+        let out = parse_candidates("```json\n[\"用户喜欢简洁回答\"]\n```", &[]);
+        assert_eq!(out, vec!["用户喜欢简洁回答"]);
+    }
 }

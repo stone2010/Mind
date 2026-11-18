@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, listenConnectorApprovals } from "./lib/bridge";
+import { useIsMobileLayout } from "./lib/useIsMobile";
 import { systemThemeListener, useAppStore } from "./store/app";
 import { useApprovalStore } from "./store/approvals";
 import { useChatStore } from "./store/chat";
@@ -21,7 +22,14 @@ export default function App() {
   const needsOnboarding = useAppStore((s) => s.needsOnboarding);
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
+  const activeId = useChatStore((s) => s.activeId);
+  const mobile = useIsMobileLayout();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [view, activeId]);
 
   useEffect(() => {
     void useAppStore.getState().init();
@@ -90,7 +98,7 @@ export default function App() {
   if (!ready) {
     return (
       <div className="flex h-full flex-col bg-bg">
-        <TitleBar />
+        {!mobile && <TitleBar />}
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <Logo height={38} />
           <Spinner size={16} className="text-faint" />
@@ -101,7 +109,7 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-bg">
-      <TitleBar />
+      {!mobile && <TitleBar />}
       <div className="flex min-h-0 flex-1">
         {fatalError ? (
           <div className="flex flex-1 items-center justify-center px-6">
@@ -127,11 +135,33 @@ export default function App() {
           <SettingsView />
         ) : (
           <>
-            <Sidebar onOpenSearch={() => setSearchOpen(true)} />
+            {!mobile && <Sidebar onOpenSearch={() => setSearchOpen(true)} />}
             <main className="flex min-w-0 flex-1 flex-col">
-              {view.name === "chat" && <ChatView />}
-              {view.name === "projects" && <ProjectsView />}
+              {view.name === "chat" && (
+                <ChatView mobile={mobile} onOpenSidebar={() => setDrawerOpen(true)} />
+              )}
+              {view.name === "projects" && (
+                <ProjectsView mobile={mobile} onOpenSidebar={() => setDrawerOpen(true)} />
+              )}
             </main>
+            {mobile && drawerOpen && (
+              <div className="fixed inset-0 z-50">
+                <div
+                  className="absolute inset-0 bg-black/35"
+                  onClick={() => setDrawerOpen(false)}
+                />
+                <div className="relative h-full w-[280px] shadow-2xl">
+                  <Sidebar
+                    mobile
+                    onClose={() => setDrawerOpen(false)}
+                    onOpenSearch={() => {
+                      setDrawerOpen(false);
+                      setSearchOpen(true);
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

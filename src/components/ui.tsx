@@ -300,7 +300,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 p-6 animate-fade-in"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/35 p-3 sm:p-6 animate-fade-in"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -310,9 +310,9 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        style={{ width }}
+        style={{ width, maxWidth: "calc(100vw - 24px)" }}
         onKeyDown={trapFocus}
-        className="max-h-[86vh] overflow-y-auto rounded-xl border border-line bg-elevated p-5 shadow-modal animate-scale-in"
+        className="max-h-[86dvh] overflow-y-auto rounded-xl border border-line bg-elevated p-5 shadow-modal animate-scale-in"
       >
         <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
         {description && <p className="mt-1 text-[12.5px] leading-5 text-muted">{description}</p>}

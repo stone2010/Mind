@@ -21,52 +21,87 @@ const COLORS = [
   "#2aa7a0",
 ];
 
-function parseChart(code: string): ChartSpec | null {
+export function parseChart(code: string): ChartSpec | null {
+  let parsed: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(code) as Record<string, unknown>;
-    const type = parsed.type;
-    if (type !== "bar" && type !== "line" && type !== "pie") return null;
-    const rawSeries = Array.isArray(parsed.series)
-      ? parsed.series
-      : Array.isArray(parsed.values)
-        ? [{ name: "值", values: parsed.values }]
-        : null;
-    if (!rawSeries) return null;
-    const series: ChartSeries[] = [];
-    for (const item of rawSeries.slice(0, 6)) {
-      if (!item || typeof item !== "object") continue;
-      const record = item as Record<string, unknown>;
-      if (!Array.isArray(record.values)) continue;
-      const values = record.values
-        .slice(0, 30)
-        .map((value) => {
-          const number = Number(value);
-          return Number.isFinite(number) ? number : 0;
-        });
-      if (values.length === 0) continue;
-      series.push({
-        name: typeof record.name === "string" ? record.name : `系列 ${series.length + 1}`,
-        values,
-      });
-    }
-    if (series.length === 0) return null;
-    const length = Math.max(...series.map((s) => s.values.length));
-    for (const item of series) {
-      while (item.values.length < length) item.values.push(0);
-    }
-    const labels = Array.isArray(parsed.labels)
-      ? parsed.labels.slice(0, length).map((label) => String(label).slice(0, 16))
-      : Array.from({ length }, (_, index) => String(index + 1));
-    while (labels.length < length) labels.push(String(labels.length + 1));
-    return {
-      type,
-      title: typeof parsed.title === "string" ? parsed.title.slice(0, 80) : undefined,
-      labels,
-      series,
-    };
+    parsed = JSON.parse(code) as Record<string, unknown>;
   } catch {
-    return null;
+    // 容错：尝试补全常见截断/笔误（末尾缺 } 等）
+    const fixed = code.trim().replace(/\s+$/, "");
+    try {
+      parsed = JSON.parse(fixed + (fixed.endsWith("{") ? "}" : "")) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
   }
+  const type = parsed.type;
+  if (type !== "bar" && type !== "line" && type !== "pie") return null;
+
+  // labels / series 可能在顶层，也可能被模型放进嵌套的 data 对象里
+  const holder: Record<string, unknown> =
+    parsed.data && typeof parsed.data === "object"
+      ? (parsed.data as Record<string, unknown>)
+      : parsed;
+
+  const rawSeriesIn = holder.series ?? holder.values ?? parsed.series ?? parsed.values;
+  const rawSeries: unknown = rawSeriesIn;
+
+  // 归一化为 [{name, values}]：兼容 series 被写成对象、缺 name、值放数组等
+  let normalized: { name?: unknown; values: unknown }[] | null = null;
+  if (Array.isArray(rawSeries)) {
+    normalized = rawSeries;
+  } else if (rawSeries && typeof rawSeries === "object") {
+    // 模型把单个 series 写成对象 {"name":..,"values":[..]}
+    normalized = [rawSeries as { name?: unknown; values: unknown }];
+  } else if (Array.isArray(holder.labels) && Array.isArray(parsed.labels)) {
+    normalized = [{ name: "值", values: parsed.labels }];
+  } else {
+    normalized = null;
+  }
+  if (!normalized) return null;
+
+  const series: ChartSeries[] = [];
+  for (const item of normalized.slice(0, 6)) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    let values = record.values;
+    if (!Array.isArray(values)) {
+      // 容错：值可能放在 data 里
+      const alt = (record as { data?: unknown }).data;
+      if (alt && typeof alt === "object" && Array.isArray((alt as Record<string, unknown>).values)) {
+        values = (alt as Record<string, unknown>).values;
+      }
+    }
+    if (!Array.isArray(values)) continue;
+    const nums = values
+      .slice(0, 30)
+      .map((value) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? number : 0;
+      });
+    if (nums.length === 0) continue;
+    series.push({
+      name: typeof record.name === "string" ? record.name : `系列 ${series.length + 1}`,
+      values: nums,
+    });
+  }
+  if (series.length === 0) return null;
+
+  const length = Math.max(...series.map((s) => s.values.length));
+  for (const item of series) {
+    while (item.values.length < length) item.values.push(0);
+  }
+  const rawLabels = holder.labels ?? parsed.labels;
+  const labels = Array.isArray(rawLabels)
+    ? (rawLabels as unknown[]).slice(0, length).map((label) => String(label).slice(0, 16))
+    : Array.from({ length }, (_, index) => String(index + 1));
+  while (labels.length < length) labels.push(String(labels.length + 1));
+  return {
+    type,
+    title: typeof parsed.title === "string" ? parsed.title.slice(0, 80) : undefined,
+    labels,
+    series,
+  };
 }
 
 function niceMax(value: number): number {
@@ -328,11 +363,17 @@ export function ChartBlock({ code }: { code: string }) {
   const spec = parseChart(code);
   if (!spec) {
     return (
-      <div className="my-3 rounded-xl border border-danger/25 bg-danger-soft p-3">
-        <p className="text-[12px] text-danger">无法解析 chart 代码块，需要 JSON 数据。</p>
-        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-panel/70 p-2 font-mono text-[10.5px] leading-4 text-muted">
+      <div className="my-3 rounded-xl border border-line bg-panel p-3">
+        <div className="flex items-center gap-2 text-[12px] text-muted">
+          <BarChart3 size={13} className="text-faint" />
+          <span>图表数据无法渲染</span>
+        </div>
+        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-sidebar p-2 font-mono text-[10.5px] leading-4 text-muted">
           {code}
         </pre>
+        <p className="mt-1.5 text-[11px] text-faint">
+          模型返回的图表 JSON 格式不正确。可以点「重新生成」让模型重画，或让它改用列表 / 表格呈现。
+        </p>
       </div>
     );
   }

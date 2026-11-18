@@ -79,7 +79,22 @@ function parseSettings(raw: Record<string, string>): AppSettings {
   try {
     const stored = raw[SETTINGS_KEY];
     if (!stored) return { ...DEFAULT_SETTINGS };
-    return { ...DEFAULT_SETTINGS, ...(JSON.parse(stored) as Partial<AppSettings>) };
+    const parsed = JSON.parse(stored) as Partial<AppSettings>;
+    const merged: AppSettings = { ...DEFAULT_SETTINGS, ...parsed };
+    if (parsed.memoryVersion !== DEFAULT_SETTINGS.memoryVersion) {
+      // v2 迁移：旧版 onboarding 会把 autoMemory 写成 false，导致所有老用户
+      // 的自动记忆实际上从未开启。用户明确关闭过“使用记忆”（useMemory=false）
+      // 时尊重该选择，否则一次性开启自动提取。
+      if (merged.useMemory !== false) merged.autoMemory = true;
+      if (
+        merged.longTermMemory === DEFAULT_SETTINGS.longTermMemory &&
+        merged.useMemory !== undefined
+      ) {
+        merged.longTermMemory = merged.useMemory;
+      }
+      merged.memoryVersion = DEFAULT_SETTINGS.memoryVersion;
+    }
+    return merged;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -102,7 +117,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
   init: async () => {
     try {
       const raw = await api.settingsGetAll();
+      let memoryUpgraded = false;
+      if (raw[SETTINGS_KEY]) {
+        try {
+          memoryUpgraded =
+            (JSON.parse(raw[SETTINGS_KEY]) as Partial<AppSettings>).memoryVersion !==
+            DEFAULT_SETTINGS.memoryVersion;
+        } catch {
+          /* fall through to defaults */
+        }
+      }
       let settings = parseSettings(raw);
+      if (memoryUpgraded) {
+        try {
+          await api.settingsSet(SETTINGS_KEY, JSON.stringify(settings));
+        } catch {
+          /* non-fatal */
+        }
+        if (settings.autoMemory) {
+          pushToast({
+            kind: "info",
+            title: "已开启长期记忆",
+            detail:
+              "Mind 会在对话后自动记住关于你的稳定信息；可随时在设置 → 记忆中关闭。",
+          });
+        }
+      }
       applyTheme(settings.theme);
 
       const providers = await api.providersGet();

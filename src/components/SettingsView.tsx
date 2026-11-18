@@ -17,8 +17,10 @@ import {
   Plug,
   Plus,
   RefreshCw,
+  Search,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   Wrench,
   X,
@@ -26,11 +28,14 @@ import {
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { api, errorMessage } from "../lib/bridge";
+import { isMobilePlatform } from "../lib/platform";
+import { useIsMobileLayout } from "../lib/useIsMobile";
 import { copyText } from "../lib/utils";
 import { modelLabel, useAppStore, type SettingsSection } from "../store/app";
+import { useChatStore } from "../store/chat";
 import { confirmDialog } from "../store/confirm";
 import { pushToast } from "../store/toast";
-import type { AppInfo, Memory, TestResult } from "../types";
+import type { AppInfo, ChatTurn, Memory, TestResult } from "../types";
 import { ConnectorSettings } from "./ConnectorSettings";
 import { DataSettings } from "./DataSettings";
 import { DeveloperSettings } from "./DeveloperSettings";
@@ -72,10 +77,15 @@ function GeneralPanel() {
   const setTheme = useAppStore((s) => s.setTheme);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const [contextDraft, setContextDraft] = useState(String(settings.contextTokens));
+  const [customDraft, setCustomDraft] = useState(settings.customInstructions ?? "");
 
   useEffect(() => {
     setContextDraft(String(settings.contextTokens));
   }, [settings.contextTokens]);
+
+  useEffect(() => {
+    setCustomDraft(settings.customInstructions ?? "");
+  }, [settings.customInstructions]);
 
   const applyContext = (value: number) => {
     setContextDraft(String(value));
@@ -188,17 +198,95 @@ function GeneralPanel() {
         <p className="mt-2 text-[11.5px] leading-5 text-faint">
           按字符保守估算，实际计费以模型服务商为准。深度思考、联网搜索、连接器、自动记忆和自动压缩会产生额外 token。
         </p>
-        {settings.contextTokens === 0 && (
-          <p className="mt-1 text-[11.5px] text-[#b07a1c] dark:text-[#e0b35a]">
-            完整历史会让输入 token 持续增长，长对话中建议改回 100k 或 16k；自动压缩在完整历史模式下不会触发。
+        <div className="mt-4 border-t border-line pt-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[12.5px] font-medium text-ink">主动澄清</div>
+              <p className="mt-0.5 text-[11.5px] leading-5 text-muted">
+                信息不足时，先向你确认（选择题 / 填空题），再给出回答。
+              </p>
+            </div>
+            <Switch
+              checked={settings.clarify}
+              label="主动澄清"
+              onChange={(value) => updateSettings({ clarify: value })}
+            />
+          </div>
+          <div className="mt-3 flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[12.5px] font-medium text-ink">主动可视化</div>
+              <p className="mt-0.5 text-[11.5px] leading-5 text-muted">
+                涉及比较、趋势、流程时，自动使用 Mermaid 图或数据图表。
+              </p>
+            </div>
+            <Switch
+              checked={settings.visualHints}
+              label="主动可视化"
+              onChange={(value) => updateSettings({ visualHints: value })}
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-line p-4">
+          <div className="text-[13px] font-medium text-ink">自定义指令</div>
+          <p className="mt-0.5 text-[11.5px] leading-5 text-muted">
+            附加在系统提示词末尾，例如「始终用简体中文回答」「代码风格偏好 Rust 惯用法」。
+            留空则使用默认行为。
           </p>
-        )}
+          <div className="mt-2.5">
+            <Textarea
+              rows={3}
+              value={customDraft}
+              onChange={(e) => setCustomDraft(e.target.value)}
+              onBlur={() => {
+                const value = customDraft.trim();
+                const current = settings.customInstructions ?? "";
+                if (value !== current) void updateSettings({ customInstructions: value });
+              }}
+              placeholder="例如：回答时使用列表；代码注释用中文"
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-line p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[13px] font-medium text-ink">聊天娱乐模式</div>
+              <p className="mt-0.5 text-[11.5px] leading-5 text-muted">
+                让回复像朋友一样简短、口语、好玩，主要用来省 token。
+                <strong className="text-[#b07a1c] dark:text-[#e0b35a]">
+                  不适合当作生产力使用
+                </strong>
+                ，重要或专业问题请切回正常模式。开启后聊天框才会出现「聊天」按钮。
+              </p>
+            </div>
+            <Switch
+              checked={settings.chatMode}
+              label="聊天娱乐模式"
+              onChange={(value) => {
+                if (value && !settings.chatModeAck) {
+                  void confirmDialog({
+                    title: "开启聊天娱乐模式？",
+                    body: "这个模式让回复像朋友一样简短、口语、好玩，主要用来省 token，不适合当作生产力使用。",
+                    confirmLabel: "开启",
+                    danger: false,
+                  }).then((ok) => {
+                    if (ok) void updateSettings({ chatMode: true, chatModeAck: true });
+                  });
+                } else {
+                  void updateSettings({ chatMode: value });
+                }
+              }}
+            />
+          </div>
+        </div>
       </div>
     </section>
   );
 }
 
 function ModelPanel() {
+  const mobile = isMobilePlatform();
   const settings = useAppStore((s) => s.settings);
   const providers = useAppStore((s) => s.providers);
   const keyPresent = useAppStore((s) => s.keyPresent);
@@ -295,7 +383,9 @@ function ModelPanel() {
       await updateSettings({ demoMode: false });
       pushToast({
         kind: "success",
-        title: "已连接，API Key 已保存到 Windows 凭据管理器",
+        title: mobile
+          ? "已连接，API Key 仅保存在本次运行的内存中"
+          : "已连接，API Key 已保存到 Windows 凭据管理器",
       });
     } catch (err) {
       setSaving(false);
@@ -314,7 +404,10 @@ function ModelPanel() {
     try {
       await api.credentialDelete(provider.id);
       await refreshKeyStatus();
-      pushToast({ kind: "success", title: "已从 Windows 凭据管理器中移除 API Key" });
+      pushToast({
+        kind: "success",
+        title: mobile ? "已从内存中移除 API Key" : "已从 Windows 凭据管理器中移除 API Key",
+      });
     } catch (err) {
       pushToast({ kind: "error", title: "移除失败", detail: errorMessage(err) });
     }
@@ -344,7 +437,9 @@ function ModelPanel() {
               {isDemo
                 ? "回复由本地模拟生成，不会请求网络，也不会产生费用。"
                 : connected
-                  ? "API Key 已安全保存在 Windows 凭据管理器中，仅用于直接连接该服务。"
+                  ? mobile
+                    ? "API Key 只保存在本次运行的内存中，仅用于直接连接该服务；重启后需重新输入。"
+                    : "API Key 已安全保存在 Windows 凭据管理器中，仅用于直接连接该服务。"
                   : "尚未保存 API Key。填写后即可开始对话。"}
             </p>
           </div>
@@ -472,7 +567,9 @@ function ModelPanel() {
 
       <p className="mt-4 flex items-start gap-1.5 text-[11.5px] leading-5 text-faint">
         <ShieldCheck size={13} className="mt-[3px] shrink-0" />
-        API Key 仅保存在本机的 Windows 凭据管理器中，不会写入聊天数据库或配置文件，也不会发送给 Mind。
+        {mobile
+          ? "API Key 只保存在本次运行的内存中，不会写入聊天数据库或配置文件，也不会发送给 Mind；重启应用后需要重新输入。"
+          : "API Key 仅保存在本机的 Windows 凭据管理器中，不会写入聊天数据库或配置文件，也不会发送给 Mind。"}
       </p>
 
       <Modal
@@ -559,10 +656,71 @@ function MemoryPanel() {
   const refreshMemories = useAppStore((s) => s.refreshMemories);
   const updateSettings = useAppStore((s) => s.updateSettings);
 
+  const activeId = useChatStore((s) => s.activeId);
+  const messagesMap = useChatStore((s) => s.messages);
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState<Memory | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const canExtract =
+    !!activeId &&
+    (messagesMap[activeId] ?? []).some(
+      (m) => (m.role === "user" || m.role === "assistant") && m.content.trim(),
+    );
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleMemories = normalizedQuery
+    ? memories.filter((m) => m.content.toLowerCase().includes(normalizedQuery))
+    : memories;
+
+  const extractFromConversation = async () => {
+    const chat = useChatStore.getState();
+    const id = chat.activeId;
+    const list = id ? chat.messages[id] ?? [] : [];
+    const turns: ChatTurn[] = list
+      .filter(
+        (m) =>
+          (m.role === "user" || m.role === "assistant") && m.content.trim(),
+      )
+      .map((m) => ({ role: m.role, content: m.content, images: [] }));
+    if (!id || turns.length === 0) {
+      pushToast({ kind: "info", title: "当前对话还没有可提取的内容。" });
+      return;
+    }
+    setExtracting(true);
+    try {
+      const added = await api.memoryAutoExtract(
+        settings.providerId,
+        settings.modelId,
+        id,
+        turns,
+      );
+      await refreshMemories();
+      pushToast(
+        added.length > 0
+          ? {
+              kind: "success",
+              title: `已从当前对话记住 ${added.length} 条信息`,
+              detail: "之后的对话会自动使用这些记忆。",
+            }
+          : {
+              kind: "info",
+              title: "没有发现新的长期记忆",
+              detail: "现有的记忆已经覆盖了这段对话，或内容不值得长期保存。",
+            },
+      );
+    } catch (err) {
+      pushToast({
+        kind: "error",
+        title: "提取记忆失败",
+        detail: errorMessage(err),
+      });
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   const add = async () => {
     const content = draft.trim();
@@ -610,7 +768,7 @@ function MemoryPanel() {
     <section>
       <SectionHeader
         title="记忆"
-        description="记录你希望 Mind 长期记住的信息：可以手动添加，也可以让 Mind 在对话后自动提取。"
+        description="记录你希望 Mind 长期记住的信息：可以手动添加、在消息下点书签保存，也可以让 Mind 在对话后自动提取。"
       />
 
       <div className="mt-6 flex items-start justify-between gap-4 rounded-xl border border-line p-4">
@@ -619,6 +777,7 @@ function MemoryPanel() {
           <p className="mt-0.5 text-[12px] leading-5 text-muted">
             每次回复后自动提取值得长期记住的信息（称呼、偏好、长期项目等）。会额外调用一次模型
             （DeepSeek 默认使用 Flash），可能产生少量费用；内容只保存在本机。
+            它与下方「在对话中使用记忆」相互独立：即使关闭注入，也会继续积累。
           </p>
           {settings.demoMode && (
             <p className="mt-1 text-[11.5px] text-faint">演示模式下不会执行自动记忆。</p>
@@ -634,13 +793,71 @@ function MemoryPanel() {
         <div>
           <div className="text-[13px] font-medium text-ink">在对话中使用记忆</div>
           <p className="mt-0.5 text-[12px] leading-5 text-muted">
-            开启后，以下记忆会作为背景信息附加到你发起的每次对话。为控制 token，最多携带最近 12 条，每条最多 200 字。
+            仅控制是否把已保存的记忆附加到新对话；关闭后仍可继续自动提取和手动管理。
           </p>
         </div>
         <Switch
-          checked={settings.useMemory}
-          onChange={(value) => updateSettings({ useMemory: value })}
+          checked={settings.longTermMemory}
+          onChange={(value) => updateSettings({ longTermMemory: value })}
         />
+      </div>
+
+      <div className="mt-3 rounded-xl border border-line p-4">
+        <div className="text-[13px] font-medium text-ink">记忆注入方式</div>
+        <p className="mt-0.5 text-[12px] leading-5 text-muted">
+          最近模式注入最近的记忆；相关模式按当前问题挑最相关的记忆，更省 token、更准。
+        </p>
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          <button
+            onClick={() => updateSettings({ memoryRecall: "recent" })}
+            className={clsx(
+              "h-7 rounded-lg border px-2.5 text-[11.5px] transition-colors",
+              settings.memoryRecall === "recent"
+                ? "border-accent/40 bg-accent-soft text-accent"
+                : "border-line text-muted hover:bg-hover hover:text-ink",
+            )}
+          >
+            最近记忆
+          </button>
+          <button
+            onClick={() => updateSettings({ memoryRecall: "recall" })}
+            className={clsx(
+              "h-7 rounded-lg border px-2.5 text-[11.5px] transition-colors",
+              settings.memoryRecall === "recall"
+                ? "border-accent/40 bg-accent-soft text-accent"
+                : "border-line text-muted hover:bg-hover hover:text-ink",
+            )}
+          >
+            相关记忆（省 token）
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-line p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[13px] font-medium text-ink">从当前对话补记</div>
+            <p className="mt-0.5 text-[12px] leading-5 text-muted">
+              立即分析当前对话并提取长期信息。适合刚开启记忆、或想补回之前已经聊过的内容。
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<Sparkles size={13} />}
+            loading={extracting}
+            disabled={!canExtract || settings.demoMode}
+            onClick={() => void extractFromConversation()}
+          >
+            立即提取
+          </Button>
+        </div>
+        {!canExtract && (
+          <p className="mt-2 text-[11px] text-faint">先打开一个有消息的对话，再回到这里提取。</p>
+        )}
+        {settings.demoMode && (
+          <p className="mt-2 text-[11px] text-faint">演示模式不调用模型，无法提取记忆。</p>
+        )}
       </div>
 
       <div className="mt-4 rounded-xl border border-line p-4">
@@ -664,13 +881,39 @@ function MemoryPanel() {
         </div>
       </div>
 
-      <div className="mt-4 space-y-2">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[13px] font-medium text-ink">
+          全部记忆
+          <span className="ml-1.5 text-[12px] font-normal text-faint">{memories.length}</span>
+        </div>
+        {memories.length > 0 && (
+          <div className="relative w-full sm:w-[220px]">
+            <Search
+              size={13}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint"
+            />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索记忆"
+              className="h-8 pl-8 text-[12px]"
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 space-y-2">
         {memories.length === 0 && (
           <p className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-[12.5px] text-faint">
             还没有记忆。手动添加，或开启自动记忆后由 Mind 在对话后提取。
           </p>
         )}
-        {memories.map((memory) => (
+        {memories.length > 0 && visibleMemories.length === 0 && (
+          <p className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-[12.5px] text-faint">
+            没有找到包含「{query.trim()}」的记忆。
+          </p>
+        )}
+        {visibleMemories.map((memory) => (
           <div key={memory.id} className="rounded-lg border border-line px-3.5 py-2.5">
             {editing?.id === memory.id ? (
               <div>
@@ -694,6 +937,9 @@ function MemoryPanel() {
                 <p className="flex-1 whitespace-pre-wrap text-[12.5px] leading-5 text-ink">
                   {memory.content}
                 </p>
+                <span className="mt-0.5 shrink-0 text-[10px] text-faint">
+                  {new Date(memory.updatedAt).toLocaleDateString("zh-CN")}
+                </span>
                 {memory.source === "auto" && (
                   <span className="mt-0.5 shrink-0 rounded border border-line px-1 py-px text-[10px] text-faint">
                     自动
@@ -722,6 +968,7 @@ function MemoryPanel() {
 }
 
 function AboutPanel() {
+  const mobile = isMobilePlatform();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -743,14 +990,16 @@ function AboutPanel() {
             {info?.dataDir ?? "…"}
           </p>
           <div className="mt-2 flex gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<FolderOpen size={13} />}
-              onClick={() => api.openDataDir().catch(() => {})}
-            >
-              打开数据目录
-            </Button>
+            {!mobile && (
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<FolderOpen size={13} />}
+                onClick={() => api.openDataDir().catch(() => {})}
+              >
+                打开数据目录
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -768,8 +1017,9 @@ function AboutPanel() {
         </div>
       </div>
       <p className="mt-4 text-[12px] leading-5 text-muted">
-        Mind 是一款模型无关的桌面 AI 客户端。聊天记录只保存在本机，API Key 保存在
-        Windows 凭据管理器中。
+        {mobile
+          ? "Mind 是一款模型无关的 AI 客户端。聊天记录只保存在手机本地；Android 预览版的 API Key 只保存在本次运行的内存中。"
+          : "Mind 是一款模型无关的桌面 AI 客户端。聊天记录只保存在本机，API Key 保存在 Windows 凭据管理器中。"}
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-3 text-[12px]">
         <button
@@ -827,12 +1077,93 @@ export function SettingsView() {
   const setView = useAppStore((s) => s.setView);
   const section: SettingsSection = view.name === "settings" ? view.section : "general";
   const [advancedOpen, setAdvancedOpen] = useState(section === "developer");
+  const mobile = useIsMobileLayout();
 
   useEffect(() => {
     if (section === "developer") setAdvancedOpen(true);
   }, [section]);
 
   const select = (id: SettingsSection) => setView({ name: "settings", section: id });
+
+  const panels = (
+    <>
+      {section === "general" && <GeneralPanel />}
+      {section === "model" && <ModelPanel />}
+      {section === "connectors" && <ConnectorSettings />}
+      {section === "memory" && <MemoryPanel />}
+      {section === "usage" && <UsageSettings />}
+      {section === "data" && <DataSettings />}
+      {section === "about" && <AboutPanel />}
+      {section === "developer" && <DeveloperSettings />}
+    </>
+  );
+
+  if (mobile) {
+    return (
+      <div className="flex h-full min-w-0 flex-1 flex-col bg-bg">
+        <div className="flex h-12 shrink-0 items-center border-b border-line px-2">
+          <button
+            onClick={() => setView({ name: "chat" })}
+            className="flex h-9 items-center gap-1 rounded-lg px-2 text-[13px] text-muted hover:bg-hover hover:text-ink"
+          >
+            <ArrowLeft size={17} />
+            返回
+          </button>
+          <h1 className="flex-1 text-center text-[13.5px] font-medium text-ink">设置</h1>
+          <div className="w-[64px]" />
+        </div>
+
+        <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line px-3 py-2">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => select(item.id)}
+              className={clsx(
+                "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[12px] transition-colors",
+                section === item.id
+                  ? "bg-accent-soft text-accent"
+                  : "text-muted hover:bg-hover hover:text-ink",
+              )}
+            >
+              <item.icon size={13.5} strokeWidth={1.8} />
+              {item.label}
+            </button>
+          ))}
+          <button
+            onClick={() => setAdvancedOpen((v) => !v)}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[12px] text-faint hover:bg-hover hover:text-muted"
+          >
+            <Wrench size={13} />
+            高级
+            <ChevronDown
+              size={11}
+              className={clsx("transition-transform", advancedOpen && "rotate-180")}
+            />
+          </button>
+        </div>
+
+        {advancedOpen && (
+          <div className="shrink-0 border-b border-line bg-sidebar px-3 py-1.5">
+            <button
+              onClick={() => select("developer")}
+              className={clsx(
+                "flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[12px]",
+                section === "developer"
+                  ? "bg-active text-ink"
+                  : "text-muted hover:bg-hover hover:text-ink",
+              )}
+            >
+              开发者选项 · 模型提供商
+            </button>
+          </div>
+        )}
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-[700px] px-4 py-5">{panels}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-w-0 flex-1 bg-bg">
@@ -892,16 +1223,7 @@ export function SettingsView() {
       </div>
 
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[700px] px-8 py-8">
-          {section === "general" && <GeneralPanel />}
-          {section === "model" && <ModelPanel />}
-          {section === "connectors" && <ConnectorSettings />}
-          {section === "memory" && <MemoryPanel />}
-          {section === "usage" && <UsageSettings />}
-          {section === "data" && <DataSettings />}
-          {section === "about" && <AboutPanel />}
-          {section === "developer" && <DeveloperSettings />}
-        </div>
+        <div className="mx-auto w-full max-w-[700px] px-8 py-8">{panels}</div>
       </div>
     </div>
   );

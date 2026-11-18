@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { api, errorMessage, listenChatEvents } from "../lib/bridge";
+import { buildSystemPrompt } from "../lib/prompts";
+import { pickRelevantMemories } from "../lib/memoryRecall";
 import { deriveTitle, parseAttachments, uuid } from "../lib/utils";
+import { hasPendingQuestion } from "../components/AskBlock";
 import type {
   Attachment,
   ChatEvent,
@@ -43,12 +46,13 @@ interface ChatStore {
   stopping: boolean;
   compacting: boolean;
   usageByConversation: Record<string, UsageLogEntry[]>;
+  answeredQuestions: Record<string, boolean>;
 
   bootstrap: () => Promise<void>;
   loadConversations: () => Promise<void>;
   openConversation: (id: string) => Promise<void>;
   newChat: (projectId?: string | null) => void;
-  send: (text: string, attachments: Attachment[]) => Promise<void>;
+  send: (text: string, attachments: Attachment[], fromAskBlock?: boolean) => Promise<void>;
   stop: () => Promise<void>;
   regenerate: (messageId: string) => Promise<void>;
   editAndResend: (messageId: string, content: string) => Promise<void>;
@@ -60,6 +64,7 @@ interface ChatStore {
   deleteConversation: (id: string) => Promise<void>;
   setConversationModel: (id: string, modelId: string) => Promise<void>;
   refreshConversationUsage: (id: string) => Promise<void>;
+  markQuestionAnswered: (messageId: string) => void;
 }
 
 let contentBuf = "";
@@ -68,6 +73,7 @@ let flushTimer: number | null = null;
 let lastPersist = 0;
 let listenerReady: Promise<void> | null = null;
 let memoryExtractionRunning = false;
+let memoryErrorNotified = false;
 
 function scheduleMemoryExtraction(
   conversationId: string,
@@ -84,6 +90,8 @@ function scheduleMemoryExtraction(
 
   window.setTimeout(async () => {
     const settings = useAppStore.getState().settings;
+    // 自动“记住”与是否把记忆注入对话是两个独立开关：即使注入关闭，
+    // 用户开启自动记忆后仍应积累记忆。
     if (memoryExtractionRunning || !settings.autoMemory || settings.demoMode) return;
     memoryExtractionRunning = true;
     try {
@@ -93,6 +101,7 @@ function scheduleMemoryExtraction(
         conversationId,
         turns,
       );
+      memoryErrorNotified = false;
       if (added.length > 0) {
         await useAppStore.getState().refreshMemories();
         pushToast({
@@ -105,8 +114,22 @@ function scheduleMemoryExtraction(
           },
         });
       }
-    } catch {
-      // Best-effort background task; failures must not disturb the chat.
+    } catch (err) {
+      // Surface the first failure per session: silent failures made the
+      // feature look unimplemented even when the key or model was wrong.
+      if (!memoryErrorNotified) {
+        memoryErrorNotified = true;
+        pushToast({
+          kind: "error",
+          title: "自动记忆提取失败",
+          detail: errorMessage(err),
+          action: {
+            label: "查看记忆",
+            onClick: () =>
+              useAppStore.getState().setView({ name: "settings", section: "memory" }),
+          },
+        });
+      }
     } finally {
       memoryExtractionRunning = false;
     }
@@ -340,8 +363,30 @@ function buildTurns(history: Message[]): ChatTurn[] {
   return turns;
 }
 
+/**
+ * 根据「记忆注入模式」挑选要携带的长期记忆：
+ * - recent（默认）：注入最近的记忆，行为与原版一致；
+ * - recall：用 CJK 关键词打分，只挑与当前问题相关的记忆（省 token、更准）。
+ */
+function pickMemoriesFor(
+  settings: { memoryRecall?: "recall" | "recent" },
+  history: Message[],
+): string[] {
+  const all = useAppStore.getState().memories;
+  if (all.length === 0) return [];
+  if (settings.memoryRecall !== "recall") {
+    return all.map((m) => m.content);
+  }
+  const query =
+    [...history].reverse().find((m) => m.role === "user")?.content ?? "";
+  return pickRelevantMemories(
+    all.map((m) => ({ id: m.id, content: m.content })),
+    query,
+    8,
+  ).map((m) => m.content);
+}
+
 function scheduleFlush() {
-  if (flushTimer != null) return;
   flushTimer = window.setTimeout(() => {
     flushTimer = null;
     flushBuffers();
@@ -737,11 +782,18 @@ async function startAssistant(conversationId: string, history: Message[]) {
     stopping: false,
   });
 
-  const memories = settings.useMemory
-    ? useAppStore.getState().memories.map((m) => m.content)
-    : [];
+  const memories =
+    settings.longTermMemory
+      ? pickMemoriesFor(settings, requestHistory)
+      : [];
 
   try {
+    const customInstructions = settings.customInstructions?.trim();
+    const hasTools =
+      settings.connectors &&
+      !settings.demoMode &&
+      (useAppStore.getState().connectors.some((c) => c.config.enabled) ||
+        !!useAppStore.getState().github?.connected);
     await api.chatStream({
       requestId,
       providerId: settings.providerId,
@@ -756,6 +808,17 @@ async function startAssistant(conversationId: string, history: Message[]) {
       maxTokens: null,
       contextTokens: settings.contextTokens,
       summary,
+      systemPrompt: buildSystemPrompt({
+        demoMode: settings.demoMode,
+        useMemory: settings.longTermMemory,
+        clarify: settings.clarify,
+        visual: settings.visualHints,
+        thinking: settings.thinking,
+        chatMode: settings.chatMode,
+        webSearch: settings.webSearch && !settings.demoMode,
+        hasTools,
+        customInstructions,
+      }),
     });
   } catch (err) {
     handleEvent({
@@ -770,6 +833,7 @@ async function startAssistant(conversationId: string, history: Message[]) {
   }
 }
 
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   conversations: [],
   messages: {},
@@ -780,6 +844,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   stopping: false,
   compacting: false,
   usageByConversation: {},
+  answeredQuestions: {},
 
   bootstrap: async () => {
     if (!listenerReady) {
@@ -834,7 +899,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({ activeId: null, pendingProjectId: projectId ?? null });
   },
 
-  send: async (text, attachments) => {
+  send: async (text, attachments, fromAskBlock = false) => {
     const state = get();
     if (state.streaming || state.compacting) return;
     const app = useAppStore.getState();
@@ -859,6 +924,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       } catch (err) {
         pushToast({ kind: "error", title: "无法创建对话", detail: errorMessage(err) });
         return;
+      }
+    }
+
+    // Only mark the pending ask-block as answered when this send actually
+    // came from the ask block UI. A free-form reply typed in the composer
+    // (the user "skipping" clarification) must NOT be treated as answered,
+    // otherwise the questions re-open on the next turn.
+    if (fromAskBlock) {
+      const pendingList = state.messages[convId] ?? [];
+      const pendingAsk = [...pendingList].reverse().find(
+        (m) => m.role === "assistant" && hasPendingQuestion(m.content),
+      );
+      if (pendingAsk && !state.answeredQuestions[pendingAsk.id]) {
+        set((s) => ({
+          answeredQuestions: { ...s.answeredQuestions, [pendingAsk.id]: true },
+        }));
       }
     }
 
@@ -899,6 +980,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
 
     await startAssistant(convId, nextList);
+  },
+
+  markQuestionAnswered: (messageId) => {
+    set((s) => ({
+      answeredQuestions: { ...s.answeredQuestions, [messageId]: true },
+    }));
   },
 
   stop: async () => {

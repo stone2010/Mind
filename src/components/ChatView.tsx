@@ -1,5 +1,6 @@
-import { FolderClosed, UploadCloud } from "lucide-react";
+import { Brain, FolderClosed, Menu, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { clsx } from "clsx";
 import { readAttachment } from "../lib/attachments";
 import { currentModel, useAppStore } from "../store/app";
 import { useChatStore } from "../store/chat";
@@ -11,7 +12,13 @@ import { MessageList } from "./MessageList";
 
 const EMPTY: Message[] = [];
 
-export function ChatView() {
+export function ChatView({
+  mobile = false,
+  onOpenSidebar,
+}: {
+  mobile?: boolean;
+  onOpenSidebar?: () => void;
+}) {
   const activeId = useChatStore((s) => s.activeId);
   const messagesMap = useChatStore((s) => s.messages);
   const conversations = useChatStore((s) => s.conversations);
@@ -19,6 +26,7 @@ export function ChatView() {
   const send = useChatStore((s) => s.send);
   const pendingProjectId = useChatStore((s) => s.pendingProjectId);
   const settings = useAppStore((s) => s.settings);
+  const memories = useAppStore((s) => s.memories);
   const keyPresent = useAppStore((s) => s.keyPresent);
   const projects = useAppStore((s) => s.projects);
   const setView = useAppStore((s) => s.setView);
@@ -129,7 +137,21 @@ export function ChatView() {
         if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files);
       }}
     >
-      <div className="flex h-[52px] shrink-0 items-center gap-2 px-5">
+      <div
+        className={clsx(
+          "flex shrink-0 items-center gap-2",
+          mobile ? "h-12 px-3" : "h-[52px] px-5",
+        )}
+      >
+        {mobile && (
+          <button
+            onClick={onOpenSidebar}
+            aria-label="打开菜单"
+            className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-ink"
+          >
+            <Menu size={19} />
+          </button>
+        )}
         <h1 className="min-w-0 truncate text-[13.5px] font-medium text-ink">
           {conversation?.title ?? "新对话"}
         </h1>
@@ -140,6 +162,16 @@ export function ChatView() {
           </span>
         )}
         <div className="flex-1" />
+        {settings.longTermMemory && memories.length > 0 && (
+          <button
+            onClick={() => setView({ name: "settings", section: "memory" })}
+            title={`长期记忆已启用：${memories.length} 条，点击管理`}
+            className="flex shrink-0 items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:bg-hover hover:text-ink"
+          >
+            <Brain size={11} />
+            {memories.length}
+          </button>
+        )}
         <ConversationCost conversationId={activeId} />
         {settings.demoMode && (
           <span className="shrink-0 rounded-md border border-line bg-sidebar px-2 py-0.5 text-[11px] text-muted">

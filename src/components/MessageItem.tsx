@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  BookmarkPlus,
   Brain,
   Check,
   ChevronDown,
@@ -12,12 +13,15 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
-import { modelLabel } from "../store/app";
+import { api, errorMessage } from "../lib/bridge";
+import { modelLabel, useAppStore } from "../store/app";
 import { useChatStore } from "../store/chat";
 import { confirmDialog } from "../store/confirm";
+import { pushToast } from "../store/toast";
 import type { Attachment, Message } from "../types";
 import { copyText, formatBytes, formatTime, parseAttachments } from "../lib/utils";
 import { ConnectorPanel, parseConnectorCalls } from "./ConnectorPanel";
+import { AskRenderer } from "./AskBlock";
 import { Markdown } from "./Markdown";
 import { SearchPanel, parseSources } from "./SearchPanel";
 import { IconButton } from "./ui";
@@ -138,6 +142,28 @@ export function MessageItem({
   const liveSearch =
     streamingInfo?.messageId === message.id ? streamingInfo.search : null;
   const isDemoMessage = !!message.modelId?.startsWith("demo:");
+  const [remembered, setRemembered] = useState(false);
+
+  const rememberMessage = async () => {
+    const content = message.content.trim();
+    if (!content) return;
+    try {
+      await api.createMemory(content.slice(0, 1000));
+      await useAppStore.getState().refreshMemories();
+      setRemembered(true);
+      pushToast({
+        kind: "success",
+        title: "已保存到长期记忆",
+        action: {
+          label: "查看记忆",
+          onClick: () =>
+            useAppStore.getState().setView({ name: "settings", section: "memory" }),
+        },
+      });
+    } catch (err) {
+      pushToast({ kind: "error", title: "保存失败", detail: errorMessage(err) });
+    }
+  };
 
   const attachments = parseAttachments(message.attachments);
   const searchSources = parseSources(message.sources);
@@ -223,6 +249,17 @@ export function MessageItem({
               <span className="mr-0.5 tabular-nums">{formatTime(message.createdAt)}</span>
               <CopyButton text={message.content} />
               <IconButton
+                label={remembered ? "已保存到记忆" : "保存到长期记忆"}
+                size="sm"
+                active={remembered}
+                onClick={() => void rememberMessage()}
+              >
+                <BookmarkPlus
+                  size={13.5}
+                  className={remembered ? "text-accent" : ""}
+                />
+              </IconButton>
+              <IconButton
                 label="编辑并重新发送"
                 size="sm"
                 disabled={busy}
@@ -257,7 +294,11 @@ export function MessageItem({
         />
       )}
 
-      {hasContent && <Markdown content={message.content} />}
+      {hasContent && <Markdown content={message.content} live={streaming} />}
+
+      {!streaming && (
+        <AskRenderer content={message.content} messageId={message.id} />
+      )}
 
       {streaming && !hasContent && (
         <div className="flex items-center gap-2 py-1 text-[13px] text-muted">
@@ -313,6 +354,14 @@ export function MessageItem({
         <div className="mt-1.5 flex items-center gap-0.5 text-[11px] text-faint">
           <span className="mr-1 tabular-nums">{formatTime(message.createdAt)}</span>
           <CopyButton text={message.content} />
+          <IconButton
+            label={remembered ? "已保存到记忆" : "保存到长期记忆"}
+            size="sm"
+            active={remembered}
+            onClick={() => void rememberMessage()}
+          >
+            <BookmarkPlus size={13.5} className={remembered ? "text-accent" : ""} />
+          </IconButton>
           {isLast && (
             <IconButton
               label="重新生成"

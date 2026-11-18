@@ -103,8 +103,11 @@ export const api = {
   clearUsage: () => invoke<void>("db_clear_usage"),
 
   dataExport: (path: string) => invoke<ExportResult>("data_export", { path }),
+  dataExportJson: () => invoke<string>("data_export_json"),
   dataImport: (path: string, replace: boolean) =>
     invoke<ImportResult>("data_import", { path, replace }),
+  dataImportJson: (content: string, replace: boolean) =>
+    invoke<ImportResult>("data_import_json", { content, replace }),
 
   listProjects: () => invoke<Project[]>("db_list_projects"),
   createProject: (name: string, description?: string | null) =>

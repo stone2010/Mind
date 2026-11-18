@@ -720,6 +720,31 @@ pub fn db_create_memory(state: State<AppState>, content: String) -> Result<Memor
     if content.is_empty() {
         return Err("记忆内容不能为空".into());
     }
+    let conn = state.db.conn.lock().unwrap();
+    // "保存到记忆" may be clicked more than once; return the existing row
+    // instead of accumulating exact duplicates.
+    if let Some(existing) = conn
+        .query_row(
+            "SELECT id, content, source, source_conversation_id, created_at, updated_at
+             FROM memories WHERE lower(trim(content)) = lower(?1)
+             ORDER BY updated_at DESC LIMIT 1",
+            params![&content],
+            |r| {
+                Ok(Memory {
+                    id: r.get(0)?,
+                    content: r.get(1)?,
+                    source: r.get(2)?,
+                    source_conversation_id: r.get(3)?,
+                    created_at: r.get(4)?,
+                    updated_at: r.get(5)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(serr)?
+    {
+        return Ok(existing);
+    }
     let now = now_millis();
     let memory = Memory {
         id: new_id(),
@@ -729,7 +754,6 @@ pub fn db_create_memory(state: State<AppState>, content: String) -> Result<Memor
         created_at: now,
         updated_at: now,
     };
-    let conn = state.db.conn.lock().unwrap();
     conn.execute(
         "INSERT INTO memories (id, content, source, source_conversation_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![

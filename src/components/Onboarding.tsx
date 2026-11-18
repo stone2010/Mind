@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { api, errorMessage } from "../lib/bridge";
 import { DEFAULT_DEEPSEEK_PROVIDER } from "../lib/defaults";
+import { isMobilePlatform } from "../lib/platform";
 import {
   CONNECTOR_PRESETS,
   runtimeAvailable,
@@ -109,6 +110,7 @@ function PreferenceRow({
 }
 
 export function Onboarding() {
+  const mobile = isMobilePlatform();
   const providers = useAppStore((s) => s.providers);
   const reason = useAppStore((s) => s.onboardingReason);
   const keyPresent = useAppStore((s) => s.keyPresent);
@@ -137,7 +139,7 @@ export function Onboarding() {
   const [contextTokens, setContextTokens] = useState(100000);
   const [autoCompress, setAutoCompress] = useState(true);
   const [webSearch, setWebSearch] = useState(false);
-  const [autoMemory, setAutoMemory] = useState(false);
+  const [autoMemory, setAutoMemory] = useState(true);
   const [usageEnabled, setUsageEnabled] = useState(true);
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
@@ -147,7 +149,7 @@ export function Onboarding() {
   const pluginPresets = CONNECTOR_PRESETS.filter((p) => p.id !== "filesystem");
 
   useEffect(() => {
-    if (step !== "plugins") return;
+    if (mobile || step !== "plugins") return;
     let alive = true;
     setRuntimeLoading(true);
     api
@@ -304,7 +306,9 @@ export function Onboarding() {
                 {
                   icon: ShieldCheck,
                   title: "数据留在本机",
-                  text: "聊天记录、记忆和用量保存在本地 SQLite；API Key 存入 Windows 凭据管理器。",
+                  text: mobile
+                    ? "聊天记录、记忆和用量保存在手机本地；API Key 只在本次运行的内存中，重启后需重新输入。"
+                    : "聊天记录、记忆和用量保存在本地 SQLite；API Key 存入 Windows 凭据管理器。",
                 },
                 {
                   icon: Wallet,
@@ -314,7 +318,9 @@ export function Onboarding() {
                 {
                   icon: Plug,
                   title: "可以接入工具",
-                  text: "通过本地 MCP 插件读取文件、抓取网页；每次工具调用都要你确认。",
+                  text: mobile
+                    ? "可以连接 GitHub 读取仓库与 Issue；每次工具调用都要你确认。"
+                    : "通过本地 MCP 插件读取文件、抓取网页；每次工具调用都要你确认。",
                 },
               ].map((item) => (
                 <div key={item.title} className="flex items-start gap-3 rounded-xl border border-line p-3.5">
@@ -482,7 +488,9 @@ export function Onboarding() {
             <div className="mt-7 flex items-start gap-2 border-t border-line pt-4 text-[11.5px] leading-5 text-faint">
               <Lock size={12} className="mt-[3px] shrink-0" />
               <p>
-                API Key 只保存在本机 Windows 凭据管理器，不写入聊天数据库或配置文件，也不会发送给 Mind。
+                {mobile
+                  ? "API Key 只保存在本次运行的内存中，不写入数据库或配置文件，也不会发送给 Mind；重启应用后需要重新输入。"
+                  : "API Key 只保存在本机 Windows 凭据管理器，不写入聊天数据库或配置文件，也不会发送给 Mind。"}
               </p>
             </div>
           </>
@@ -551,8 +559,8 @@ export function Onboarding() {
                 onChange={setWebSearch}
               />
               <PreferenceRow
-                title="自动记忆"
-                description="每次回复后额外调用一次模型提取长期信息。默认关闭；也可以在记忆页手动添加。"
+                title="自动记忆（跨对话）"
+                description="每次回复后额外调用一次模型提取值得长期记住的信息，下次开新对话也会记得你。默认开启；产生少量 token，可在记忆页关闭或手动管理。"
                 checked={autoMemory}
                 onChange={setAutoMemory}
               />
@@ -567,11 +575,15 @@ export function Onboarding() {
             <Button
               variant="primary"
               size="lg"
-              onClick={() => setStep("plugins")}
+              loading={finishing}
+              onClick={() => {
+                if (mobile) void finish();
+                else setStep("plugins");
+              }}
               className="mt-5 w-full"
             >
-              继续选择插件
-              <ArrowRight size={15} />
+              {mobile ? "完成配置，开始使用" : "继续选择插件"}
+              {!finishing && <ArrowRight size={15} />}
             </Button>
           </>
         )}

@@ -39,7 +39,7 @@ function extractLang(children: ReactNode): string {
   return "";
 }
 
-function CodeBlock({ children }: { children?: ReactNode }) {
+function CodeBlock({ children, live = false }: { children?: ReactNode; live?: boolean }) {
   const [copied, setCopied] = useState(false);
   const lang = extractLang(children);
   const text = nodeText(children).replace(/\n$/, "");
@@ -51,24 +51,34 @@ function CodeBlock({ children }: { children?: ReactNode }) {
     }
   };
 
-  if (lang === "mermaid") return <MermaidBlock code={text} />;
-  if (lang === "chart" || lang === "mind-chart") return <ChartBlock code={text} />;
+  // 流式中途：围栏可能还没闭合，mermaid/chart/ask 先按普通代码块显示，
+  // 等内容稳定后再交给对应渲染器（避免半截内容乱渲染、字体跳变）。
+  if (!live && lang === "mermaid") return <MermaidBlock code={text} />;
+  if (!live && (lang === "chart" || lang === "mind-chart")) return <ChartBlock code={text} />;
 
   return (
     <div className="code-block">
       <div className="code-head">
         <span className="code-lang">{lang || "text"}</span>
-        <button className="code-copy" onClick={onCopy} aria-label="复制代码">
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-          {copied ? "已复制" : "复制"}
-        </button>
+        {lang !== "ask" && (
+          <button className="code-copy" onClick={onCopy} aria-label="复制代码">
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+            {copied ? "已复制" : "复制"}
+          </button>
+        )}
       </div>
       <pre>{children}</pre>
     </div>
   );
 }
 
-export const Markdown = memo(function Markdown({ content }: { content: string }) {
+export const Markdown = memo(function Markdown({
+  content,
+  live = false,
+}: {
+  content: string;
+  live?: boolean;
+}) {
   const [preview, setPreview] = useState<string | null>(null);
 
   useEffect(() => {
@@ -82,7 +92,9 @@ export const Markdown = memo(function Markdown({ content }: { content: string })
 
   const components = useMemo(
     () => ({
-      pre: CodeBlock,
+      pre: (props: { children?: ReactNode }) => (
+        <CodeBlock {...props} live={live} />
+      ),
       a: ({ href, children }: { href?: string; children?: ReactNode }) => (
         <a
           href={href}
@@ -122,7 +134,7 @@ export const Markdown = memo(function Markdown({ content }: { content: string })
         );
       },
     }),
-    [],
+    [live],
   );
 
   return (
