@@ -4,7 +4,7 @@ use crate::models::*;
 use crate::providers;
 use crate::AppState;
 use rusqlite::{params, OptionalExtension};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tauri::State;
 use uuid::Uuid;
 
@@ -693,23 +693,125 @@ pub fn db_project_conversations(
 
 // ---------------------------------------------------------------- memories
 
+pub(crate) const MEMORY_COLUMNS: &str = "id, memory_type, subject, content, source, source_conversation_id, source_message_id, confidence, importance, status, valid_from, valid_until, last_accessed_at, metadata, created_at, updated_at";
+
+pub(crate) fn memory_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Memory> {
+    Ok(Memory {
+        id: r.get(0)?,
+        memory_type: r.get(1)?,
+        subject: r.get(2)?,
+        content: r.get(3)?,
+        source: r.get(4)?,
+        source_conversation_id: r.get(5)?,
+        source_message_id: r.get(6)?,
+        confidence: r.get(7)?,
+        importance: r.get(8)?,
+        status: r.get(9)?,
+        valid_from: r.get(10)?,
+        valid_until: r.get(11)?,
+        last_accessed_at: r.get(12)?,
+        metadata: r.get(13)?,
+        created_at: r.get(14)?,
+        updated_at: r.get(15)?,
+    })
+}
+
+pub(crate) fn normalize_memory_type(value: &str) -> String {
+    match value.trim().to_lowercase().as_str() {
+        "preference" | "偏好" => "preference",
+        "project" | "项目" => "project",
+        "episodic" | "episode" | "事件" => "episodic",
+        "knowledge" | "知识" => "knowledge",
+        _ => "profile",
+    }
+    .into()
+}
+
+pub(crate) fn insert_memory_row(conn: &rusqlite::Connection, memory: &Memory) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO memories
+         (id, memory_type, subject, content, source, source_conversation_id,
+          source_message_id, confidence, importance, status, valid_from,
+          valid_until, last_accessed_at, metadata, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+        params![
+            memory.id,
+            memory.memory_type,
+            memory.subject,
+            memory.content,
+            memory.source,
+            memory.source_conversation_id,
+            memory.source_message_id,
+            memory.confidence,
+            memory.importance,
+            memory.status,
+            memory.valid_from,
+            memory.valid_until,
+            memory.last_accessed_at,
+            memory.metadata,
+            memory.created_at,
+            memory.updated_at
+        ],
+    )
+    .map_err(serr)?;
+    Ok(())
+}
+
+pub(crate) fn record_memory_source(
+    conn: &rusqlite::Connection,
+    memory_id: &str,
+    conversation_id: Option<&str>,
+    message_id: Option<&str>,
+    now: i64,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO memory_sources (memory_id, conversation_id, message_id, created_at)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![memory_id, conversation_id, message_id, now],
+    )
+    .map_err(serr)?;
+    Ok(())
+}
+
+pub(crate) fn snapshot_memory(
+    conn: &rusqlite::Connection,
+    memory: &Memory,
+    reason: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO memory_versions
+         (id, memory_id, content, memory_type, subject, status, confidence,
+          importance, changed_at, reason)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            new_id(),
+            memory.id,
+            memory.content,
+            memory.memory_type,
+            memory.subject,
+            memory.status,
+            memory.confidence,
+            memory.importance,
+            now_millis(),
+            reason
+        ],
+    )
+    .map_err(serr)?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn db_list_memories(state: State<AppState>) -> Result<Vec<Memory>, String> {
     let conn = state.db.conn.lock().unwrap();
     let mut stmt = conn
-        .prepare("SELECT id, content, source, source_conversation_id, created_at, updated_at FROM memories ORDER BY updated_at DESC")
+        .prepare(&format!(
+            "SELECT {MEMORY_COLUMNS} FROM memories
+             ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'superseded' THEN 1 ELSE 2 END,
+                      updated_at DESC"
+        ))
         .map_err(serr)?;
     let rows = stmt
-        .query_map([], |r| {
-            Ok(Memory {
-                id: r.get(0)?,
-                content: r.get(1)?,
-                source: r.get(2)?,
-                source_conversation_id: r.get(3)?,
-                created_at: r.get(4)?,
-                updated_at: r.get(5)?,
-            })
-        })
+        .query_map([], memory_from_row)
         .map_err(serr)?;
     rows.collect::<Result<Vec<_>, _>>().map_err(serr)
 }
@@ -720,28 +822,100 @@ pub fn db_create_memory(state: State<AppState>, content: String) -> Result<Memor
     if content.is_empty() {
         return Err("记忆内容不能为空".into());
     }
+    let conn = state.db.conn.lock().unwrap();
+    // "保存到记忆" may be clicked more than once; return the existing row
+    // instead of accumulating exact duplicates.
+    if let Some(existing) = conn
+        .query_row(
+            &format!(
+                "SELECT {MEMORY_COLUMNS} FROM memories
+                 WHERE lower(trim(content)) = lower(?1) AND status = 'active'
+                 ORDER BY updated_at DESC LIMIT 1"
+            ),
+            params![&content],
+            memory_from_row,
+        )
+        .optional()
+        .map_err(serr)?
+    {
+        return Ok(existing);
+    }
     let now = now_millis();
     let memory = Memory {
         id: new_id(),
+        memory_type: "profile".into(),
+        subject: String::new(),
         content,
         source: "manual".into(),
         source_conversation_id: None,
+        source_message_id: None,
+        confidence: 1.0,
+        importance: 0.8,
+        status: "active".into(),
+        valid_from: Some(now),
+        valid_until: None,
+        last_accessed_at: None,
+        metadata: None,
         created_at: now,
         updated_at: now,
     };
+    insert_memory_row(&conn, &memory)?;
+    Ok(memory)
+}
+
+#[tauri::command]
+pub fn db_create_memory_typed(
+    state: State<AppState>,
+    content: String,
+    memory_type: String,
+    subject: Option<String>,
+) -> Result<Memory, String> {
+    let content = content.trim().to_string();
+    if content.is_empty() {
+        return Err("记忆内容不能为空".into());
+    }
     let conn = state.db.conn.lock().unwrap();
-    conn.execute(
-        "INSERT INTO memories (id, content, source, source_conversation_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![
-            memory.id,
-            memory.content,
-            memory.source,
-            memory.source_conversation_id,
-            memory.created_at,
-            memory.updated_at
-        ],
-    )
-    .map_err(serr)?;
+    if let Some(existing) = conn
+        .query_row(
+            &format!(
+                "SELECT {MEMORY_COLUMNS} FROM memories
+                 WHERE lower(trim(content)) = lower(?1) AND status = 'active'
+                 ORDER BY updated_at DESC LIMIT 1"
+            ),
+            params![&content],
+            memory_from_row,
+        )
+        .optional()
+        .map_err(serr)?
+    {
+        return Ok(existing);
+    }
+    let now = now_millis();
+    let memory = Memory {
+        id: new_id(),
+        memory_type: normalize_memory_type(&memory_type),
+        subject: subject
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase()
+            .chars()
+            .take(64)
+            .collect(),
+        content,
+        source: "manual".into(),
+        source_conversation_id: None,
+        source_message_id: None,
+        confidence: 1.0,
+        importance: 0.8,
+        status: "active".into(),
+        valid_from: Some(now),
+        valid_until: None,
+        last_accessed_at: None,
+        metadata: None,
+        created_at: now,
+        updated_at: now,
+    };
+    insert_memory_row(&conn, &memory)?;
     Ok(memory)
 }
 
@@ -752,6 +926,16 @@ pub fn db_update_memory(state: State<AppState>, id: String, content: String) -> 
         return Err("记忆内容不能为空".into());
     }
     let conn = state.db.conn.lock().unwrap();
+    let old = conn
+        .query_row(
+            &format!("SELECT {MEMORY_COLUMNS} FROM memories WHERE id = ?1"),
+            params![&id],
+            memory_from_row,
+        )
+        .optional()
+        .map_err(serr)?
+        .ok_or_else(|| "记忆不存在".to_string())?;
+    snapshot_memory(&conn, &old, "edited")?;
     conn.execute(
         "UPDATE memories SET content = ?2, updated_at = ?3 WHERE id = ?1",
         params![id, content, now_millis()],
@@ -762,10 +946,344 @@ pub fn db_update_memory(state: State<AppState>, id: String, content: String) -> 
 
 #[tauri::command]
 pub fn db_delete_memory(state: State<AppState>, id: String) -> Result<(), String> {
-    let conn = state.db.conn.lock().unwrap();
-    conn.execute("DELETE FROM memories WHERE id = ?1", [&id])
+    let mut conn = state.db.conn.lock().unwrap();
+    let tx = conn.transaction().map_err(serr)?;
+    tx.execute("DELETE FROM memory_versions WHERE memory_id = ?1", params![&id])
         .map_err(serr)?;
+    tx.execute("DELETE FROM memory_sources WHERE memory_id = ?1", params![&id])
+        .map_err(serr)?;
+    tx.execute("DELETE FROM memories WHERE id = ?1", params![&id])
+        .map_err(serr)?;
+    tx.commit().map_err(serr)?;
     Ok(())
+}
+
+fn fts_available(conn: &rusqlite::Connection) -> bool {
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memories_fts'",
+        [],
+        |_| Ok(true),
+    )
+    .unwrap_or(false)
+}
+
+fn build_fts_query(query: &str) -> String {
+    query
+        .split_whitespace()
+        .filter(|term| !term.is_empty())
+        .map(|term| format!("\"{}\"", term.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" OR ")
+}
+
+fn active_memories(
+    conn: &rusqlite::Connection,
+    limit: usize,
+) -> Result<Vec<Memory>, String> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {MEMORY_COLUMNS} FROM memories
+             WHERE status = 'active'
+             ORDER BY importance DESC, updated_at DESC LIMIT ?1"
+        ))
+        .map_err(serr)?;
+    let rows = stmt
+        .query_map(params![limit as i64], memory_from_row)
+        .map_err(serr)?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(serr)
+}
+
+fn search_memory_rows(
+    conn: &rusqlite::Connection,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<Memory>, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return active_memories(conn, limit);
+    }
+
+    let mut results = Vec::new();
+    if fts_available(conn) {
+        let fts_query = build_fts_query(query);
+        if !fts_query.is_empty() {
+            if let Ok(mut stmt) = conn.prepare(
+                "SELECT memory_id FROM memories_fts
+                 WHERE memories_fts MATCH ?1
+                 ORDER BY bm25(memories_fts) LIMIT ?2",
+            ) {
+                if let Ok(ids) = stmt.query_map(params![fts_query, limit as i64], |r| {
+                    r.get::<_, String>(0)
+                }) {
+                    for id in ids.flatten() {
+                        if let Ok(memory) = conn.query_row(
+                            &format!(
+                                "SELECT {MEMORY_COLUMNS} FROM memories
+                                 WHERE id = ?1 AND status = 'active'"
+                            ),
+                            params![id],
+                            memory_from_row,
+                        ) {
+                            results.push(memory);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if results.is_empty() {
+        let like = format!("%{query}%");
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT {MEMORY_COLUMNS} FROM memories
+                 WHERE status = 'active'
+                   AND (content LIKE ?1 OR subject LIKE ?1)
+                 ORDER BY importance DESC, updated_at DESC LIMIT ?2"
+            ))
+            .map_err(serr)?;
+        let rows = stmt
+            .query_map(params![like, limit as i64], memory_from_row)
+            .map_err(serr)?;
+        results = rows.collect::<Result<Vec<_>, _>>().map_err(serr)?;
+    }
+    Ok(results)
+}
+
+fn is_cjk(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF
+    )
+}
+
+fn push_cjk_tokens(run: &[char], out: &mut HashSet<String>) {
+    if run.len() == 1 {
+        out.insert(run[0].to_string());
+    } else {
+        for window in run.windows(2) {
+            out.insert(window.iter().collect());
+        }
+    }
+}
+
+fn memory_tokens(text: &str) -> HashSet<String> {
+    let lower = text.to_lowercase();
+    let mut out = HashSet::new();
+    for word in lower.split(|c: char| !c.is_ascii_alphanumeric()) {
+        if word.len() >= 2 {
+            out.insert(word.to_string());
+        }
+    }
+    let chars: Vec<char> = lower.chars().collect();
+    let mut run_start: Option<usize> = None;
+    for (index, ch) in chars.iter().copied().enumerate() {
+        if is_cjk(ch) {
+            if run_start.is_none() {
+                run_start = Some(index);
+            }
+        } else if let Some(start) = run_start.take() {
+            push_cjk_tokens(&chars[start..index], &mut out);
+        }
+    }
+    if let Some(start) = run_start {
+        push_cjk_tokens(&chars[start..], &mut out);
+    }
+    out
+}
+
+fn memory_score(query: &str, memory: &Memory, now: i64) -> f64 {
+    let query_tokens = memory_tokens(query);
+    let content_tokens = memory_tokens(&memory.content);
+    let overlap = if query_tokens.is_empty() {
+        0.0
+    } else {
+        query_tokens
+            .iter()
+            .filter(|token| content_tokens.contains(*token))
+            .count() as f64
+            / query_tokens.len() as f64
+    };
+    let type_boost = match memory.memory_type.as_str() {
+        "preference" | "project" => 1.0,
+        "profile" => 0.85,
+        "knowledge" => 0.6,
+        _ => 0.45,
+    };
+    let age_days = ((now - memory.updated_at).max(0) as f64) / 86_400_000.0;
+    let recency = (1.0 - age_days / 365.0).clamp(0.0, 1.0);
+    overlap * 0.45
+        + memory.importance.clamp(0.0, 1.0) * 0.2
+        + memory.confidence.clamp(0.0, 1.0) * 0.15
+        + recency * 0.1
+        + type_boost * 0.1
+}
+
+#[tauri::command]
+pub fn db_search_memories(
+    state: State<AppState>,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<Memory>, String> {
+    let limit = limit.unwrap_or(20).clamp(1, 100);
+    let conn = state.db.conn.lock().unwrap();
+    search_memory_rows(&conn, &query, limit)
+}
+
+#[tauri::command]
+pub fn db_memory_recall(
+    state: State<AppState>,
+    query: String,
+    mode: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<String>, String> {
+    let mode = mode.unwrap_or_else(|| "recall".into());
+    let default_limit = if mode == "recent" { 24 } else { 8 };
+    let limit = limit.unwrap_or(default_limit).clamp(1, 24);
+    let conn = state.db.conn.lock().unwrap();
+    let now = now_millis();
+
+    if mode == "recent" {
+        let memories = active_memories(&conn, limit)?;
+        for memory in &memories {
+            let _ = conn.execute(
+                "UPDATE memories SET last_accessed_at = ?2 WHERE id = ?1",
+                params![memory.id, now],
+            );
+        }
+        return Ok(memories.into_iter().map(|m| m.content).collect());
+    }
+
+    let query = query.trim().to_string();
+    let mut candidates = search_memory_rows(&conn, &query, limit.saturating_mul(4))?;
+    if candidates.is_empty() {
+        candidates = active_memories(&conn, limit.saturating_mul(4))?;
+    }
+    candidates.sort_by(|a, b| {
+        memory_score(&query, b, now)
+            .partial_cmp(&memory_score(&query, a, now))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    candidates.truncate(limit);
+    for memory in &candidates {
+        let _ = conn.execute(
+            "UPDATE memories SET last_accessed_at = ?2 WHERE id = ?1",
+            params![memory.id, now],
+        );
+    }
+    Ok(candidates.into_iter().map(|m| m.content).collect())
+}
+
+#[tauri::command]
+pub fn db_memory_history(
+    state: State<AppState>,
+    id: String,
+) -> Result<MemoryHistory, String> {
+    let conn = state.db.conn.lock().unwrap();
+    let mut version_stmt = conn
+        .prepare(
+            "SELECT id, memory_id, content, memory_type, subject, status,
+                    confidence, importance, changed_at, reason
+             FROM memory_versions WHERE memory_id = ?1
+             ORDER BY changed_at DESC",
+        )
+        .map_err(serr)?;
+    let versions = version_stmt
+        .query_map(params![&id], |r| {
+            Ok(MemoryVersion {
+                id: r.get(0)?,
+                memory_id: r.get(1)?,
+                content: r.get(2)?,
+                memory_type: r.get(3)?,
+                subject: r.get(4)?,
+                status: r.get(5)?,
+                confidence: r.get(6)?,
+                importance: r.get(7)?,
+                changed_at: r.get(8)?,
+                reason: r.get(9)?,
+            })
+        })
+        .map_err(serr)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(serr)?;
+
+    let mut source_stmt = conn
+        .prepare(
+            "SELECT id, memory_id, conversation_id, message_id, created_at
+             FROM memory_sources WHERE memory_id = ?1 ORDER BY created_at DESC",
+        )
+        .map_err(serr)?;
+    let sources = source_stmt
+        .query_map(params![&id], |r| {
+            Ok(MemorySource {
+                id: r.get(0)?,
+                memory_id: r.get(1)?,
+                conversation_id: r.get(2)?,
+                message_id: r.get(3)?,
+                created_at: r.get(4)?,
+            })
+        })
+        .map_err(serr)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(serr)?;
+
+    Ok(MemoryHistory { versions, sources })
+}
+
+#[tauri::command]
+pub fn db_memory_consolidate(
+    state: State<AppState>,
+) -> Result<MemoryConsolidateResult, String> {
+    let conn = state.db.conn.lock().unwrap();
+    let now = now_millis();
+    let memories = active_memories(&conn, 1000)?;
+    let mut kept: Vec<Memory> = Vec::new();
+    let mut subjects: HashMap<String, String> = HashMap::new();
+    let mut superseded = 0usize;
+
+    for memory in memories {
+        let subject_key = if memory.subject.trim().is_empty() {
+            None
+        } else {
+            Some(format!(
+                "{}::{}",
+                memory.memory_type,
+                memory.subject.trim().to_lowercase()
+            ))
+        };
+        let duplicate = match &subject_key {
+            Some(key) => subjects.contains_key(key),
+            None => kept
+                .iter()
+                .any(|item| crate::memory::similarity(&item.content, &memory.content) >= 0.9),
+        };
+        if duplicate {
+            snapshot_memory(&conn, &memory, "consolidate")?;
+            conn.execute(
+                "UPDATE memories SET status = 'superseded', valid_until = ?2, updated_at = ?3 WHERE id = ?1",
+                params![memory.id, now, now],
+            )
+            .map_err(serr)?;
+            superseded += 1;
+        } else {
+            if let Some(key) = subject_key {
+                subjects.insert(key, memory.id.clone());
+            }
+            kept.push(memory);
+        }
+    }
+
+    let active: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM memories WHERE status = 'active'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(serr)?;
+    Ok(MemoryConsolidateResult {
+        superseded,
+        merged: 0,
+        active: active as usize,
+    })
 }
 
 // --------------------------------------------------------------------- usage

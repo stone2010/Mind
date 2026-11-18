@@ -17,8 +17,10 @@ import {
   Plug,
   Plus,
   RefreshCw,
+  Search,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   Wrench,
   X,
@@ -30,9 +32,17 @@ import { isMobilePlatform } from "../lib/platform";
 import { useIsMobileLayout } from "../lib/useIsMobile";
 import { copyText } from "../lib/utils";
 import { modelLabel, useAppStore, type SettingsSection } from "../store/app";
+import { useChatStore } from "../store/chat";
 import { confirmDialog } from "../store/confirm";
 import { pushToast } from "../store/toast";
-import type { AppInfo, Memory, TestResult } from "../types";
+import type {
+  AppInfo,
+  ChatTurn,
+  Memory,
+  MemoryHistory,
+  MemoryType,
+  TestResult,
+} from "../types";
 import { ConnectorSettings } from "./ConnectorSettings";
 import { DataSettings } from "./DataSettings";
 import { DeveloperSettings } from "./DeveloperSettings";
@@ -74,10 +84,15 @@ function GeneralPanel() {
   const setTheme = useAppStore((s) => s.setTheme);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const [contextDraft, setContextDraft] = useState(String(settings.contextTokens));
+  const [customDraft, setCustomDraft] = useState(settings.customInstructions ?? "");
 
   useEffect(() => {
     setContextDraft(String(settings.contextTokens));
   }, [settings.contextTokens]);
+
+  useEffect(() => {
+    setCustomDraft(settings.customInstructions ?? "");
+  }, [settings.customInstructions]);
 
   const applyContext = (value: number) => {
     setContextDraft(String(value));
@@ -190,11 +205,88 @@ function GeneralPanel() {
         <p className="mt-2 text-[11.5px] leading-5 text-faint">
           按字符保守估算，实际计费以模型服务商为准。深度思考、联网搜索、连接器、自动记忆和自动压缩会产生额外 token。
         </p>
-        {settings.contextTokens === 0 && (
-          <p className="mt-1 text-[11.5px] text-[#b07a1c] dark:text-[#e0b35a]">
-            完整历史会让输入 token 持续增长，长对话中建议改回 100k 或 16k；自动压缩在完整历史模式下不会触发。
+        <div className="mt-4 border-t border-line pt-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[12.5px] font-medium text-ink">主动澄清</div>
+              <p className="mt-0.5 text-[11.5px] leading-5 text-muted">
+                信息不足时，先向你确认（选择题 / 填空题），再给出回答。
+              </p>
+            </div>
+            <Switch
+              checked={settings.clarify}
+              label="主动澄清"
+              onChange={(value) => updateSettings({ clarify: value })}
+            />
+          </div>
+          <div className="mt-3 flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[12.5px] font-medium text-ink">主动可视化</div>
+              <p className="mt-0.5 text-[11.5px] leading-5 text-muted">
+                涉及比较、趋势、流程时，自动使用 Mermaid 图或数据图表。
+              </p>
+            </div>
+            <Switch
+              checked={settings.visualHints}
+              label="主动可视化"
+              onChange={(value) => updateSettings({ visualHints: value })}
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-line p-4">
+          <div className="text-[13px] font-medium text-ink">自定义指令</div>
+          <p className="mt-0.5 text-[11.5px] leading-5 text-muted">
+            附加在系统提示词末尾，例如「始终用简体中文回答」「代码风格偏好 Rust 惯用法」。
+            留空则使用默认行为。
           </p>
-        )}
+          <div className="mt-2.5">
+            <Textarea
+              rows={3}
+              value={customDraft}
+              onChange={(e) => setCustomDraft(e.target.value)}
+              onBlur={() => {
+                const value = customDraft.trim();
+                const current = settings.customInstructions ?? "";
+                if (value !== current) void updateSettings({ customInstructions: value });
+              }}
+              placeholder="例如：回答时使用列表；代码注释用中文"
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-line p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[13px] font-medium text-ink">聊天娱乐模式</div>
+              <p className="mt-0.5 text-[11.5px] leading-5 text-muted">
+                让回复像朋友一样简短、口语、好玩，主要用来省 token。
+                <strong className="text-[#b07a1c] dark:text-[#e0b35a]">
+                  不适合当作生产力使用
+                </strong>
+                ，重要或专业问题请切回正常模式。开启后聊天框才会出现「聊天」按钮。
+              </p>
+            </div>
+            <Switch
+              checked={settings.chatMode}
+              label="聊天娱乐模式"
+              onChange={(value) => {
+                if (value && !settings.chatModeAck) {
+                  void confirmDialog({
+                    title: "开启聊天娱乐模式？",
+                    body: "这个模式让回复像朋友一样简短、口语、好玩，主要用来省 token，不适合当作生产力使用。",
+                    confirmLabel: "开启",
+                    danger: false,
+                  }).then((ok) => {
+                    if (ok) void updateSettings({ chatMode: true, chatModeAck: true });
+                  });
+                } else {
+                  void updateSettings({ chatMode: value });
+                }
+              }}
+            />
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -565,30 +657,185 @@ function ModelPanel() {
   );
 }
 
+const MEMORY_TYPE_META: Record<
+  MemoryType,
+  { label: string; className: string }
+> = {
+  profile: {
+    label: "档案",
+    className: "border-line bg-sidebar text-muted",
+  },
+  preference: {
+    label: "偏好",
+    className: "border-accent/25 bg-accent-soft text-accent",
+  },
+  project: {
+    label: "项目",
+    className: "border-success/25 bg-success/10 text-success",
+  },
+  episodic: {
+    label: "事件",
+    className: "border-[#e0a53a]/30 bg-[#e0a53a]/10 text-[#a97616] dark:text-[#e0b35a]",
+  },
+  knowledge: {
+    label: "知识",
+    className: "border-[#9b7bf5]/25 bg-[#9b7bf5]/10 text-[#7554d6] dark:text-[#b39af7]",
+  },
+};
+
 function MemoryPanel() {
   const settings = useAppStore((s) => s.settings);
   const memories = useAppStore((s) => s.memories);
   const refreshMemories = useAppStore((s) => s.refreshMemories);
   const updateSettings = useAppStore((s) => s.updateSettings);
 
+  const activeId = useChatStore((s) => s.activeId);
+  const messagesMap = useChatStore((s) => s.messages);
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState<Memory | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [consolidating, setConsolidating] = useState(false);
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<MemoryType | "all">("all");
+  const [showInactive, setShowInactive] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [history, setHistory] = useState<MemoryHistory | null>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [draftType, setDraftType] = useState<MemoryType>("profile");
+  const [draftSubject, setDraftSubject] = useState("");
+
+  const canExtract =
+    !!activeId &&
+    (messagesMap[activeId] ?? []).some(
+      (m) => (m.role === "user" || m.role === "assistant") && m.content.trim(),
+    );
+  const activeMemories = memories.filter((m) => m.status === "active");
+  const typeCounts = activeMemories.reduce<Record<string, number>>(
+    (acc, memory) => {
+      acc[memory.type] = (acc[memory.type] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleMemories = (showInactive ? memories : activeMemories).filter(
+    (memory) => {
+      if (typeFilter !== "all" && memory.type !== typeFilter) return false;
+      if (!normalizedQuery) return true;
+      return (
+        memory.content.toLowerCase().includes(normalizedQuery) ||
+        memory.subject.toLowerCase().includes(normalizedQuery)
+      );
+    },
+  );
+
+  const extractFromConversation = async () => {
+    const chat = useChatStore.getState();
+    const id = chat.activeId;
+    const list = id ? chat.messages[id] ?? [] : [];
+    const turns: ChatTurn[] = list
+      .filter(
+        (m) =>
+          (m.role === "user" || m.role === "assistant") && m.content.trim(),
+      )
+      .map((m) => ({ id: m.id, role: m.role, content: m.content, images: [] }));
+    if (!id || turns.length === 0) {
+      pushToast({ kind: "info", title: "当前对话还没有可提取的内容。" });
+      return;
+    }
+    setExtracting(true);
+    try {
+      const added = await api.memoryAutoExtract(
+        settings.providerId,
+        settings.modelId,
+        id,
+        turns,
+      );
+      await refreshMemories();
+      pushToast(
+        added.length > 0
+          ? {
+              kind: "success",
+              title: `已从当前对话记住 ${added.length} 条信息`,
+              detail: "之后的对话会自动使用这些记忆。",
+            }
+          : {
+              kind: "info",
+              title: "没有发现新的长期记忆",
+              detail: "现有的记忆已经覆盖了这段对话，或内容不值得长期保存。",
+            },
+      );
+    } catch (err) {
+      pushToast({
+        kind: "error",
+        title: "提取记忆失败",
+        detail: errorMessage(err),
+      });
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   const add = async () => {
     const content = draft.trim();
     if (!content) return;
     setSaving(true);
     try {
-      await api.createMemory(content);
+      await api.createMemoryTyped(content, draftType, draftSubject);
       await refreshMemories();
       setDraft("");
+      setDraftSubject("");
     } catch (err) {
       pushToast({ kind: "error", title: "添加失败", detail: errorMessage(err) });
     } finally {
       setSaving(false);
     }
+  };
+
+  const consolidate = async () => {
+    setConsolidating(true);
+    try {
+      const result = await api.consolidateMemories();
+      await refreshMemories();
+      pushToast({
+        kind: "success",
+        title:
+          result.superseded > 0
+            ? `已整理 ${result.superseded} 条旧记忆`
+            : "记忆已经是整理好的状态",
+        detail: `当前有效记忆 ${result.active} 条；旧版本已保留，可展开查看。`,
+      });
+    } catch (err) {
+      pushToast({ kind: "error", title: "整理失败", detail: errorMessage(err) });
+    } finally {
+      setConsolidating(false);
+    }
+  };
+
+  const toggleHistory = async (memory: Memory) => {
+    if (expanded === memory.id) {
+      setExpanded(null);
+      return;
+    }
+    setExpanded(memory.id);
+    setHistory(null);
+    setHistoryId(memory.id);
+    setHistoryLoading(true);
+    try {
+      setHistory(await api.memoryHistory(memory.id));
+    } catch {
+      setHistory(null);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const openSource = async (conversationId: string) => {
+    useAppStore.getState().setView({ name: "chat" });
+    await useChatStore.getState().openConversation(conversationId);
   };
 
   const saveEdit = async () => {
@@ -622,7 +869,7 @@ function MemoryPanel() {
     <section>
       <SectionHeader
         title="记忆"
-        description="记录你希望 Mind 长期记住的信息：可以手动添加，也可以让 Mind 在对话后自动提取。"
+        description="记录你希望 Mind 长期记住的信息：可以手动添加、在消息下点书签保存，也可以让 Mind 在对话后自动提取。"
       />
 
       <div className="mt-6 flex items-start justify-between gap-4 rounded-xl border border-line p-4">
@@ -631,6 +878,7 @@ function MemoryPanel() {
           <p className="mt-0.5 text-[12px] leading-5 text-muted">
             每次回复后自动提取值得长期记住的信息（称呼、偏好、长期项目等）。会额外调用一次模型
             （DeepSeek 默认使用 Flash），可能产生少量费用；内容只保存在本机。
+            它与下方「在对话中使用记忆」相互独立：即使关闭注入，也会继续积累。
           </p>
           {settings.demoMode && (
             <p className="mt-1 text-[11.5px] text-faint">演示模式下不会执行自动记忆。</p>
@@ -646,16 +894,116 @@ function MemoryPanel() {
         <div>
           <div className="text-[13px] font-medium text-ink">在对话中使用记忆</div>
           <p className="mt-0.5 text-[12px] leading-5 text-muted">
-            开启后，以下记忆会作为背景信息附加到你发起的每次对话。为控制 token，最多携带最近 12 条，每条最多 200 字。
+            仅控制是否把已保存的记忆附加到新对话；关闭后仍可继续自动提取和手动管理。
           </p>
         </div>
         <Switch
-          checked={settings.useMemory}
-          onChange={(value) => updateSettings({ useMemory: value })}
+          checked={settings.longTermMemory}
+          onChange={(value) => updateSettings({ longTermMemory: value })}
         />
       </div>
 
+      <div className="mt-3 rounded-xl border border-line p-4">
+        <div className="text-[13px] font-medium text-ink">记忆注入方式</div>
+        <p className="mt-0.5 text-[12px] leading-5 text-muted">
+          最近模式注入最近的记忆；相关模式按当前问题挑最相关的记忆，更省 token、更准。
+        </p>
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          <button
+            onClick={() => updateSettings({ memoryRecall: "recent" })}
+            className={clsx(
+              "h-7 rounded-lg border px-2.5 text-[11.5px] transition-colors",
+              settings.memoryRecall === "recent"
+                ? "border-accent/40 bg-accent-soft text-accent"
+                : "border-line text-muted hover:bg-hover hover:text-ink",
+            )}
+          >
+            最近记忆
+          </button>
+          <button
+            onClick={() => updateSettings({ memoryRecall: "recall" })}
+            className={clsx(
+              "h-7 rounded-lg border px-2.5 text-[11.5px] transition-colors",
+              settings.memoryRecall === "recall"
+                ? "border-accent/40 bg-accent-soft text-accent"
+                : "border-line text-muted hover:bg-hover hover:text-ink",
+            )}
+          >
+            相关记忆（省 token）
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[
+          { label: "有效记忆", value: activeMemories.length },
+          { label: "偏好", value: typeCounts.preference ?? 0 },
+          { label: "项目", value: typeCounts.project ?? 0 },
+          {
+            label: "已替代",
+            value: memories.filter((m) => m.status !== "active").length,
+          },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className="rounded-lg border border-line bg-sidebar/50 px-3 py-2.5"
+          >
+            <div className="text-[18px] font-semibold tabular-nums text-ink">
+              {stat.value}
+            </div>
+            <div className="text-[10.5px] text-faint">{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 rounded-xl border border-line p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[13px] font-medium text-ink">从当前对话补记</div>
+            <p className="mt-0.5 text-[12px] leading-5 text-muted">
+              立即分析当前对话并提取长期信息。适合刚开启记忆、或想补回之前已经聊过的内容。
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<Sparkles size={13} />}
+            loading={extracting}
+            disabled={!canExtract || settings.demoMode}
+            onClick={() => void extractFromConversation()}
+          >
+            立即提取
+          </Button>
+        </div>
+        {!canExtract && (
+          <p className="mt-2 text-[11px] text-faint">先打开一个有消息的对话，再回到这里提取。</p>
+        )}
+        {settings.demoMode && (
+          <p className="mt-2 text-[11px] text-faint">演示模式不调用模型，无法提取记忆。</p>
+        )}
+      </div>
+
       <div className="mt-4 rounded-xl border border-line p-4">
+        <div className="mb-2 flex flex-wrap gap-2">
+          <select
+            value={draftType}
+            onChange={(e) => setDraftType(e.target.value as MemoryType)}
+            className="h-8 rounded-lg border border-line bg-panel px-2 text-[12px] text-ink focus:border-accent focus:outline-none"
+            aria-label="记忆类型"
+          >
+            {(Object.keys(MEMORY_TYPE_META) as MemoryType[]).map((type) => (
+              <option key={type} value={type}>
+                {MEMORY_TYPE_META[type].label}
+              </option>
+            ))}
+          </select>
+          <Input
+            value={draftSubject}
+            onChange={(e) => setDraftSubject(e.target.value)}
+            placeholder="主题标识（可选，如 response_style）"
+            className="h-8 flex-1 text-[12px]"
+          />
+        </div>
         <Textarea
           rows={2}
           value={draft}
@@ -676,58 +1024,248 @@ function MemoryPanel() {
         </div>
       </div>
 
-      <div className="mt-4 space-y-2">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[13px] font-medium text-ink">
+          {showInactive ? "全部记录" : "有效记忆"}
+          <span className="ml-1.5 text-[12px] font-normal text-faint">
+            {showInactive ? memories.length : activeMemories.length}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            onClick={() => setShowInactive((value) => !value)}
+            className={clsx(
+              "h-8 rounded-lg border px-2.5 text-[11.5px] transition-colors",
+              showInactive
+                ? "border-accent/40 bg-accent-soft text-accent"
+                : "border-line text-muted hover:bg-hover hover:text-ink",
+            )}
+          >
+            {showInactive ? "只看有效" : "显示已替代"}
+          </button>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<RefreshCw size={13} />}
+            loading={consolidating}
+            onClick={() => void consolidate()}
+          >
+            整理记忆
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        <button
+          onClick={() => setTypeFilter("all")}
+          className={clsx(
+            "h-7 rounded-full border px-2.5 text-[11.5px] transition-colors",
+            typeFilter === "all"
+              ? "border-accent/40 bg-accent-soft text-accent"
+              : "border-line text-muted hover:bg-hover hover:text-ink",
+          )}
+        >
+          全部 · {activeMemories.length}
+        </button>
+        {(Object.keys(MEMORY_TYPE_META) as MemoryType[]).map((type) => (
+          <button
+            key={type}
+            onClick={() => setTypeFilter(type)}
+            className={clsx(
+              "h-7 rounded-full border px-2.5 text-[11.5px] transition-colors",
+              typeFilter === type
+                ? "border-accent/40 bg-accent-soft text-accent"
+                : "border-line text-muted hover:bg-hover hover:text-ink",
+            )}
+          >
+            {MEMORY_TYPE_META[type].label} · {typeCounts[type] ?? 0}
+          </button>
+        ))}
+      </div>
+
+      {memories.length > 0 && (
+        <div className="relative mt-3">
+          <Search
+            size={13}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint"
+          />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索内容或主题"
+            className="h-8 pl-8 text-[12px]"
+          />
+        </div>
+      )}
+
+      <div className="mt-3 space-y-2">
         {memories.length === 0 && (
           <p className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-[12.5px] text-faint">
             还没有记忆。手动添加，或开启自动记忆后由 Mind 在对话后提取。
           </p>
         )}
-        {memories.map((memory) => (
-          <div key={memory.id} className="rounded-lg border border-line px-3.5 py-2.5">
-            {editing?.id === memory.id ? (
-              <div>
-                <Textarea
-                  rows={2}
-                  value={editDraft}
-                  onChange={(e) => setEditDraft(e.target.value)}
-                  autoFocus
-                />
-                <div className="mt-1.5 flex justify-end gap-1.5">
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
-                    取消
-                  </Button>
-                  <Button size="sm" variant="primary" onClick={saveEdit} disabled={!editDraft.trim()}>
-                    保存
-                  </Button>
+        {memories.length > 0 && visibleMemories.length === 0 && (
+          <p className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-[12.5px] text-faint">
+            当前筛选下没有记忆。
+          </p>
+        )}
+        {visibleMemories.map((memory) => {
+          const meta = MEMORY_TYPE_META[memory.type] ?? MEMORY_TYPE_META.profile;
+          const isOpen = expanded === memory.id;
+          const detail = historyId === memory.id ? history : null;
+          return (
+            <div
+              key={memory.id}
+              className={clsx(
+                "rounded-xl border border-line px-3.5 py-3 transition-colors",
+                memory.status !== "active" && "bg-sidebar/40 opacity-75",
+              )}
+            >
+              {editing?.id === memory.id ? (
+                <div>
+                  <Textarea
+                    rows={2}
+                    value={editDraft}
+                    onChange={(e) => setEditDraft(e.target.value)}
+                    autoFocus
+                  />
+                  <div className="mt-1.5 flex justify-end gap-1.5">
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                      取消
+                    </Button>
+                    <Button size="sm" variant="primary" onClick={saveEdit} disabled={!editDraft.trim()}>
+                      保存
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="flex items-start gap-2">
-                <p className="flex-1 whitespace-pre-wrap text-[12.5px] leading-5 text-ink">
-                  {memory.content}
-                </p>
-                {memory.source === "auto" && (
-                  <span className="mt-0.5 shrink-0 rounded border border-line px-1 py-px text-[10px] text-faint">
-                    自动
-                  </span>
-                )}
-                <IconButton
-                  label="编辑记忆"
-                  size="sm"
-                  onClick={() => {
-                    setEditing(memory);
-                    setEditDraft(memory.content);
-                  }}
-                >
-                  <Pencil size={13} />
-                </IconButton>
-                <IconButton label="删除记忆" size="sm" onClick={() => remove(memory)}>
-                  <Trash2 size={13} />
-                </IconButton>
-              </div>
-            )}
-          </div>
-        ))}
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={clsx(
+                        "rounded border px-1.5 py-px text-[10px] font-medium",
+                        meta.className,
+                      )}
+                    >
+                      {meta.label}
+                    </span>
+                    {memory.subject && (
+                      <span className="max-w-[180px] truncate font-mono text-[10px] text-faint">
+                        {memory.subject}
+                      </span>
+                    )}
+                    {memory.status !== "active" && (
+                      <span className="rounded border border-line px-1.5 py-px text-[10px] text-faint">
+                        {memory.status === "superseded" ? "已替代" : "已过期"}
+                      </span>
+                    )}
+                    <span className="flex-1" />
+                    <span className="text-[10px] text-faint">
+                      {new Date(memory.updatedAt).toLocaleDateString("zh-CN")}
+                    </span>
+                  </div>
+
+                  <p className="mt-1.5 whitespace-pre-wrap text-[12.5px] leading-5 text-ink">
+                    {memory.content}
+                  </p>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-faint">
+                    <span>置信 {Math.round(memory.confidence * 100)}%</span>
+                    <span>重要 {Math.round(memory.importance * 100)}%</span>
+                    <span>{memory.source === "auto" ? "自动提取" : "手动添加"}</span>
+                    {memory.sourceConversationId && (
+                      <button
+                        onClick={() => void openSource(memory.sourceConversationId!)}
+                        className="text-accent hover:underline"
+                      >
+                        查看来源对话
+                      </button>
+                    )}
+                    <span className="flex-1" />
+                    <button
+                      onClick={() => void toggleHistory(memory)}
+                      className="text-muted hover:text-ink"
+                    >
+                      {isOpen ? "收起详情" : "为什么记得"}
+                    </button>
+                    <IconButton
+                      label="编辑记忆"
+                      size="sm"
+                      onClick={() => {
+                        setEditing(memory);
+                        setEditDraft(memory.content);
+                      }}
+                    >
+                      <Pencil size={13} />
+                    </IconButton>
+                    <IconButton label="删除记忆" size="sm" onClick={() => remove(memory)}>
+                      <Trash2 size={13} />
+                    </IconButton>
+                  </div>
+
+                  {isOpen && (
+                    <div className="mt-2.5 rounded-lg border border-line bg-sidebar/50 p-3 text-[11px] leading-5 text-muted">
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                        <span>创建：{new Date(memory.createdAt).toLocaleString("zh-CN")}</span>
+                        <span>更新：{new Date(memory.updatedAt).toLocaleString("zh-CN")}</span>
+                        <span>有效起始：{memory.validFrom ? new Date(memory.validFrom).toLocaleDateString("zh-CN") : "—"}</span>
+                        <span>有效结束：{memory.validUntil ? new Date(memory.validUntil).toLocaleDateString("zh-CN") : "—"}</span>
+                      </div>
+                      <div className="mt-2 border-t border-line pt-2">
+                        <span className="font-medium text-ink">历史版本</span>
+                        {historyLoading ? (
+                          <span className="ml-2 text-faint">加载中…</span>
+                        ) : (detail?.versions.length ?? 0) === 0 ? (
+                          <span className="ml-2 text-faint">没有历史版本</span>
+                        ) : (
+                          <div className="mt-1 space-y-1">
+                            {detail!.versions.slice(0, 5).map((version) => (
+                              <div key={version.id} className="flex gap-2">
+                                <span className="shrink-0 text-faint">
+                                  {new Date(version.changedAt).toLocaleDateString("zh-CN")}
+                                </span>
+                                <span className="shrink-0 rounded border border-line px-1 text-[10px] text-faint">
+                                  {version.reason === "consolidate"
+                                    ? "整理"
+                                    : version.reason === "edited"
+                                      ? "编辑"
+                                      : "被替代"}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate">{version.content}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {(detail?.sources.length ?? 0) > 0 && (
+                        <div className="mt-2 border-t border-line pt-2">
+                          <span className="font-medium text-ink">来源</span>
+                          <div className="mt-1 space-y-0.5">
+                            {detail!.sources.slice(0, 5).map((source) => (
+                              <div key={source.id} className="flex items-center gap-2">
+                                <span>
+                                  {new Date(source.createdAt).toLocaleString("zh-CN")}
+                                </span>
+                                {source.conversationId && (
+                                  <button
+                                    onClick={() => void openSource(source.conversationId!)}
+                                    className="text-accent hover:underline"
+                                  >
+                                    打开对话
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </section>
   );

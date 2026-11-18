@@ -139,7 +139,7 @@ export function Onboarding() {
   const [contextTokens, setContextTokens] = useState(100000);
   const [autoCompress, setAutoCompress] = useState(true);
   const [webSearch, setWebSearch] = useState(false);
-  const [autoMemory, setAutoMemory] = useState(false);
+  const [autoMemory, setAutoMemory] = useState(true);
   const [usageEnabled, setUsageEnabled] = useState(true);
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
@@ -559,8 +559,8 @@ export function Onboarding() {
                 onChange={setWebSearch}
               />
               <PreferenceRow
-                title="自动记忆"
-                description="每次回复后额外调用一次模型提取长期信息。默认关闭；也可以在记忆页手动添加。"
+                title="自动记忆（跨对话）"
+                description="每次回复后额外调用一次模型提取值得长期记住的信息，下次开新对话也会记得你。默认开启；产生少量 token，可在记忆页关闭或手动管理。"
                 checked={autoMemory}
                 onChange={setAutoMemory}
               />

@@ -1,4 +1,4 @@
-import { FolderClosed, Menu, UploadCloud } from "lucide-react";
+import { Brain, FolderClosed, Menu, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
 import { readAttachment } from "../lib/attachments";
@@ -26,6 +26,8 @@ export function ChatView({
   const send = useChatStore((s) => s.send);
   const pendingProjectId = useChatStore((s) => s.pendingProjectId);
   const settings = useAppStore((s) => s.settings);
+  const memories = useAppStore((s) => s.memories);
+  const activeMemoryCount = memories.filter((m) => m.status === "active").length;
   const keyPresent = useAppStore((s) => s.keyPresent);
   const projects = useAppStore((s) => s.projects);
   const setView = useAppStore((s) => s.setView);
@@ -161,6 +163,16 @@ export function ChatView({
           </span>
         )}
         <div className="flex-1" />
+        {settings.longTermMemory && activeMemoryCount > 0 && (
+          <button
+            onClick={() => setView({ name: "settings", section: "memory" })}
+            title={`长期记忆已启用：${activeMemoryCount} 条有效记忆，点击管理`}
+            className="flex shrink-0 items-center gap-1 rounded-md border border-line px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:bg-hover hover:text-ink"
+          >
+            <Brain size={11} />
+            {activeMemoryCount}
+          </button>
+        )}
         <ConversationCost conversationId={activeId} />
         {settings.demoMode && (
           <span className="shrink-0 rounded-md border border-line bg-sidebar px-2 py-0.5 text-[11px] text-muted">

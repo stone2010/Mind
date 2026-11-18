@@ -5,6 +5,7 @@ import {
   ChevronDown,
   FileText,
   Globe2,
+  MessageCircle,
   Paperclip,
   Plug,
   Square,
@@ -92,6 +93,29 @@ export function Composer({
       updateSettings({ webSearch: false });
     }
   }, [supportsWebSearch, settings.webSearch, updateSettings]);
+
+  const toggleChatMode = () => {
+    if (settings.chatMode) {
+      // 关闭娱乐模式
+      void updateSettings({ chatMode: false, thinking: false });
+      return;
+    }
+    // 首次开启需确认风险
+    if (settings.chatModeAck) {
+      void updateSettings({ chatMode: true, thinking: false });
+      return;
+    }
+    void import("../store/confirm").then(({ confirmDialog }) =>
+      confirmDialog({
+        title: "开启聊天娱乐模式？",
+        body: "这个模式让回复像朋友一样简短、口语、好玩，主要用来省 token，不适合当作生产力工具。重要或专业问题请随时切回正常模式。",
+        confirmLabel: "开启",
+        danger: false,
+      }),
+    ).then((ok) => {
+      if (ok) void updateSettings({ chatMode: true, chatModeAck: true, thinking: false });
+    });
+  };
 
   return (
     <div
@@ -186,15 +210,23 @@ export function Composer({
               {options.length > 1 && <ChevronDown size={12} className="text-faint" />}
             </button>
 
-            {supportsThinking && (
+            {supportsThinking && !settings.demoMode && (
               <button
                 onClick={() => updateSettings({ thinking: !settings.thinking })}
-                title={settings.thinking ? "关闭深度思考" : "开启深度思考"}
+                disabled={settings.chatMode}
+                title={
+                  settings.chatMode
+                    ? "娱乐模式下深度思考不生效，请先退出聊天娱乐模式"
+                    : settings.thinking
+                      ? "关闭深度思考"
+                      : "开启深度思考"
+                }
                 className={clsx(
                   "flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors",
                   settings.thinking
                     ? "bg-accent-soft text-accent"
                     : "text-muted hover:bg-hover hover:text-ink",
+                  settings.chatMode && "cursor-not-allowed opacity-40",
                 )}
               >
                 <Brain size={14} />
@@ -215,6 +247,26 @@ export function Composer({
               >
                 <Globe2 size={14} />
                 <span className="hidden sm:inline">联网搜索</span>
+              </button>
+            )}
+
+            {settings.chatMode && !settings.demoMode && (
+              <button
+                onClick={toggleChatMode}
+                title={
+                  settings.chatMode
+                    ? "点击退出聊天娱乐模式"
+                    : "点击开启聊天娱乐模式（简短口语，省 token）"
+                }
+                className={clsx(
+                  "flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors",
+                  settings.chatMode
+                    ? "bg-[#7c5cff1f] text-[#7c5cff]"
+                    : "text-muted hover:bg-hover hover:text-ink",
+                )}
+              >
+                <MessageCircle size={14} />
+                <span className="hidden sm:inline">聊天</span>
               </button>
             )}
 
@@ -278,7 +330,9 @@ export function Composer({
             ? "正在压缩较早的对话，完成后会自动继续发送"
             : settings.demoMode
               ? "演示模式：回复由本地模拟生成，并非真实 AI 输出"
-              : "内容由 AI 生成，请核对重要信息"}
+              : settings.chatMode
+                ? "聊天娱乐模式：简短口语回复，省 token，不适合生产力使用"
+                : "内容由 AI 生成，请核对重要信息"}
         </p>
       </div>
 
