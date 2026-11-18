@@ -14,6 +14,7 @@ import {
   Search,
   Settings2,
   Trash2,
+  X,
 } from "lucide-react";
 import { useState } from "react";
 import { clsx } from "clsx";
@@ -114,8 +115,17 @@ function ConversationRow({
   );
 }
 
-export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
-  const collapsed = useAppStore((s) => s.settings.sidebarCollapsed);
+export function Sidebar({
+  onOpenSearch,
+  mobile = false,
+  onClose,
+}: {
+  onOpenSearch: () => void;
+  mobile?: boolean;
+  onClose?: () => void;
+}) {
+  const collapsedSetting = useAppStore((s) => s.settings.sidebarCollapsed);
+  const collapsed = mobile ? false : collapsedSetting;
   const updateSettings = useAppStore((s) => s.updateSettings);
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
@@ -225,10 +235,16 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
 
   return (
     <aside
-      style={{ width: collapsed ? 60 : 248 }}
+      style={{ width: mobile ? 280 : collapsed ? 60 : 248 }}
       className="flex h-full shrink-0 flex-col border-r border-line bg-sidebar"
     >
-      <div className={clsx("flex h-11 items-center gap-2", collapsed ? "justify-center px-2" : "px-3")}>
+      <div
+        className={clsx(
+          "flex shrink-0 items-center gap-2",
+          mobile ? "h-14" : "h-11",
+          collapsed ? "justify-center px-2" : "px-3",
+        )}
+      >
         {collapsed ? (
           <button onClick={toggleCollapsed} title="展开侧边栏" className="rounded-md p-1 hover:bg-hover">
             <Logo height={21} />
@@ -239,9 +255,15 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
             <span className="flex-1 truncate text-[13.5px] font-semibold tracking-[-0.01em] text-ink">
               Mind
             </span>
-            <IconButton label="收起侧边栏" size="sm" onClick={toggleCollapsed}>
-              <PanelLeftClose size={15} />
-            </IconButton>
+            {mobile ? (
+              <IconButton label="关闭侧边栏" size="sm" onClick={() => onClose?.()}>
+                <X size={17} />
+              </IconButton>
+            ) : (
+              <IconButton label="收起侧边栏" size="sm" onClick={toggleCollapsed}>
+                <PanelLeftClose size={15} />
+              </IconButton>
+            )}
           </>
         )}
       </div>
@@ -259,7 +281,9 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
           {!collapsed && (
             <>
               <span>新建对话</span>
-              <span className="ml-auto text-[10.5px] font-normal text-faint">Ctrl N</span>
+              {!mobile && (
+                <span className="ml-auto text-[10.5px] font-normal text-faint">Ctrl N</span>
+              )}
             </>
           )}
         </button>
@@ -276,7 +300,7 @@ export function Sidebar({ onOpenSearch }: { onOpenSearch: () => void }) {
           {!collapsed && (
             <>
               <span>搜索对话</span>
-              <span className="ml-auto text-[10.5px] text-faint">Ctrl K</span>
+              {!mobile && <span className="ml-auto text-[10.5px] text-faint">Ctrl K</span>}
             </>
           )}
         </button>

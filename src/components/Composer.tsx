@@ -16,6 +16,7 @@ import { useAppStore } from "../store/app";
 import { useChatStore } from "../store/chat";
 import type { Attachment, ModelConfig, ProviderConfig } from "../types";
 import { formatBytes } from "../lib/utils";
+import { useIsMobileLayout } from "../lib/useIsMobile";
 import { IconButton, Popover } from "./ui";
 
 interface ModelOption {
@@ -38,6 +39,7 @@ export function Composer({
   onFiles: (files: FileList | File[]) => void;
   onSend: () => void;
 }) {
+  const mobile = useIsMobileLayout();
   const streaming = useChatStore((s) => s.streaming !== null);
   const compacting = useChatStore((s) => s.compacting);
   const stopping = useChatStore((s) => s.stopping);
@@ -92,7 +94,12 @@ export function Composer({
   }, [supportsWebSearch, settings.webSearch, updateSettings]);
 
   return (
-    <div className="shrink-0 px-5 pb-4 pt-1">
+    <div
+      className={clsx(
+        "shrink-0 pt-1",
+        mobile ? "px-3 pb-2" : "px-5 pb-4",
+      )}
+    >
       <div className="mx-auto w-full max-w-[780px]">
         <div className="rounded-2xl border border-line bg-panel transition-colors focus-within:border-line-strong">
           {attachments.length > 0 && (
@@ -143,7 +150,10 @@ export function Composer({
                 if (canSend) onSend();
               }
             }}
-            className="block max-h-[200px] min-h-[52px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[14.5px] leading-[1.65] text-ink placeholder:text-faint"
+            className={clsx(
+              "block max-h-[200px] min-h-[52px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 leading-[1.65] text-ink placeholder:text-faint",
+              mobile ? "text-[16px]" : "text-[14.5px]",
+            )}
           />
 
           <div className="flex items-center gap-1 px-2 pb-2 pt-0.5">

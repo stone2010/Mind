@@ -26,6 +26,8 @@ import {
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { api, errorMessage } from "../lib/bridge";
+import { isMobilePlatform } from "../lib/platform";
+import { useIsMobileLayout } from "../lib/useIsMobile";
 import { copyText } from "../lib/utils";
 import { modelLabel, useAppStore, type SettingsSection } from "../store/app";
 import { confirmDialog } from "../store/confirm";
@@ -199,6 +201,7 @@ function GeneralPanel() {
 }
 
 function ModelPanel() {
+  const mobile = isMobilePlatform();
   const settings = useAppStore((s) => s.settings);
   const providers = useAppStore((s) => s.providers);
   const keyPresent = useAppStore((s) => s.keyPresent);
@@ -295,7 +298,9 @@ function ModelPanel() {
       await updateSettings({ demoMode: false });
       pushToast({
         kind: "success",
-        title: "已连接，API Key 已保存到 Windows 凭据管理器",
+        title: mobile
+          ? "已连接，API Key 仅保存在本次运行的内存中"
+          : "已连接，API Key 已保存到 Windows 凭据管理器",
       });
     } catch (err) {
       setSaving(false);
@@ -314,7 +319,10 @@ function ModelPanel() {
     try {
       await api.credentialDelete(provider.id);
       await refreshKeyStatus();
-      pushToast({ kind: "success", title: "已从 Windows 凭据管理器中移除 API Key" });
+      pushToast({
+        kind: "success",
+        title: mobile ? "已从内存中移除 API Key" : "已从 Windows 凭据管理器中移除 API Key",
+      });
     } catch (err) {
       pushToast({ kind: "error", title: "移除失败", detail: errorMessage(err) });
     }
@@ -344,7 +352,9 @@ function ModelPanel() {
               {isDemo
                 ? "回复由本地模拟生成，不会请求网络，也不会产生费用。"
                 : connected
-                  ? "API Key 已安全保存在 Windows 凭据管理器中，仅用于直接连接该服务。"
+                  ? mobile
+                    ? "API Key 只保存在本次运行的内存中，仅用于直接连接该服务；重启后需重新输入。"
+                    : "API Key 已安全保存在 Windows 凭据管理器中，仅用于直接连接该服务。"
                   : "尚未保存 API Key。填写后即可开始对话。"}
             </p>
           </div>
@@ -472,7 +482,9 @@ function ModelPanel() {
 
       <p className="mt-4 flex items-start gap-1.5 text-[11.5px] leading-5 text-faint">
         <ShieldCheck size={13} className="mt-[3px] shrink-0" />
-        API Key 仅保存在本机的 Windows 凭据管理器中，不会写入聊天数据库或配置文件，也不会发送给 Mind。
+        {mobile
+          ? "API Key 只保存在本次运行的内存中，不会写入聊天数据库或配置文件，也不会发送给 Mind；重启应用后需要重新输入。"
+          : "API Key 仅保存在本机的 Windows 凭据管理器中，不会写入聊天数据库或配置文件，也不会发送给 Mind。"}
       </p>
 
       <Modal
@@ -722,6 +734,7 @@ function MemoryPanel() {
 }
 
 function AboutPanel() {
+  const mobile = isMobilePlatform();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -743,14 +756,16 @@ function AboutPanel() {
             {info?.dataDir ?? "…"}
           </p>
           <div className="mt-2 flex gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<FolderOpen size={13} />}
-              onClick={() => api.openDataDir().catch(() => {})}
-            >
-              打开数据目录
-            </Button>
+            {!mobile && (
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<FolderOpen size={13} />}
+                onClick={() => api.openDataDir().catch(() => {})}
+              >
+                打开数据目录
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -768,8 +783,9 @@ function AboutPanel() {
         </div>
       </div>
       <p className="mt-4 text-[12px] leading-5 text-muted">
-        Mind 是一款模型无关的桌面 AI 客户端。聊天记录只保存在本机，API Key 保存在
-        Windows 凭据管理器中。
+        {mobile
+          ? "Mind 是一款模型无关的 AI 客户端。聊天记录只保存在手机本地；Android 预览版的 API Key 只保存在本次运行的内存中。"
+          : "Mind 是一款模型无关的桌面 AI 客户端。聊天记录只保存在本机，API Key 保存在 Windows 凭据管理器中。"}
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-3 text-[12px]">
         <button
@@ -827,12 +843,93 @@ export function SettingsView() {
   const setView = useAppStore((s) => s.setView);
   const section: SettingsSection = view.name === "settings" ? view.section : "general";
   const [advancedOpen, setAdvancedOpen] = useState(section === "developer");
+  const mobile = useIsMobileLayout();
 
   useEffect(() => {
     if (section === "developer") setAdvancedOpen(true);
   }, [section]);
 
   const select = (id: SettingsSection) => setView({ name: "settings", section: id });
+
+  const panels = (
+    <>
+      {section === "general" && <GeneralPanel />}
+      {section === "model" && <ModelPanel />}
+      {section === "connectors" && <ConnectorSettings />}
+      {section === "memory" && <MemoryPanel />}
+      {section === "usage" && <UsageSettings />}
+      {section === "data" && <DataSettings />}
+      {section === "about" && <AboutPanel />}
+      {section === "developer" && <DeveloperSettings />}
+    </>
+  );
+
+  if (mobile) {
+    return (
+      <div className="flex h-full min-w-0 flex-1 flex-col bg-bg">
+        <div className="flex h-12 shrink-0 items-center border-b border-line px-2">
+          <button
+            onClick={() => setView({ name: "chat" })}
+            className="flex h-9 items-center gap-1 rounded-lg px-2 text-[13px] text-muted hover:bg-hover hover:text-ink"
+          >
+            <ArrowLeft size={17} />
+            返回
+          </button>
+          <h1 className="flex-1 text-center text-[13.5px] font-medium text-ink">设置</h1>
+          <div className="w-[64px]" />
+        </div>
+
+        <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line px-3 py-2">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => select(item.id)}
+              className={clsx(
+                "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[12px] transition-colors",
+                section === item.id
+                  ? "bg-accent-soft text-accent"
+                  : "text-muted hover:bg-hover hover:text-ink",
+              )}
+            >
+              <item.icon size={13.5} strokeWidth={1.8} />
+              {item.label}
+            </button>
+          ))}
+          <button
+            onClick={() => setAdvancedOpen((v) => !v)}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[12px] text-faint hover:bg-hover hover:text-muted"
+          >
+            <Wrench size={13} />
+            高级
+            <ChevronDown
+              size={11}
+              className={clsx("transition-transform", advancedOpen && "rotate-180")}
+            />
+          </button>
+        </div>
+
+        {advancedOpen && (
+          <div className="shrink-0 border-b border-line bg-sidebar px-3 py-1.5">
+            <button
+              onClick={() => select("developer")}
+              className={clsx(
+                "flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-[12px]",
+                section === "developer"
+                  ? "bg-active text-ink"
+                  : "text-muted hover:bg-hover hover:text-ink",
+              )}
+            >
+              开发者选项 · 模型提供商
+            </button>
+          </div>
+        )}
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-[700px] px-4 py-5">{panels}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-w-0 flex-1 bg-bg">
@@ -892,16 +989,7 @@ export function SettingsView() {
       </div>
 
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[700px] px-8 py-8">
-          {section === "general" && <GeneralPanel />}
-          {section === "model" && <ModelPanel />}
-          {section === "connectors" && <ConnectorSettings />}
-          {section === "memory" && <MemoryPanel />}
-          {section === "usage" && <UsageSettings />}
-          {section === "data" && <DataSettings />}
-          {section === "about" && <AboutPanel />}
-          {section === "developer" && <DeveloperSettings />}
-        </div>
+        <div className="mx-auto w-full max-w-[700px] px-8 py-8">{panels}</div>
       </div>
     </div>
   );

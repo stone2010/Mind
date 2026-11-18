@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   FolderClosed,
+  Menu,
   MessageSquarePlus,
   MoreHorizontal,
   Pencil,
@@ -25,7 +26,13 @@ function formatDate(ts: number): string {
   });
 }
 
-export function ProjectsView() {
+export function ProjectsView({
+  mobile = false,
+  onOpenSidebar,
+}: {
+  mobile?: boolean;
+  onOpenSidebar?: () => void;
+}) {
   const view = useAppStore((s) => s.view);
   const projects = useAppStore((s) => s.projects);
   const refreshProjects = useAppStore((s) => s.refreshProjects);
@@ -134,15 +141,29 @@ export function ProjectsView() {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col bg-bg">
-      <div className="flex h-[52px] shrink-0 items-center gap-2 px-6">
+      <div
+        className={clsx(
+          "flex shrink-0 items-center gap-2",
+          mobile ? "h-12 px-3" : "h-[52px] px-6",
+        )}
+      >
+        {mobile && (
+          <button
+            onClick={onOpenSidebar}
+            aria-label="打开菜单"
+            className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-ink"
+          >
+            <Menu size={19} />
+          </button>
+        )}
         {project ? (
           <>
             <button
               onClick={() => setView({ name: "projects", projectId: null })}
-              className="flex items-center gap-1.5 text-[12px] text-muted hover:text-ink"
+              className="flex shrink-0 items-center gap-1.5 text-[12px] text-muted hover:text-ink"
             >
               <ArrowLeft size={14} />
-              Projects
+              <span className={mobile ? "hidden" : undefined}>Projects</span>
             </button>
             <span className="text-faint">/</span>
             <h1 className="min-w-0 truncate text-[13.5px] font-medium text-ink">
@@ -155,7 +176,7 @@ export function ProjectsView() {
               icon={<Pencil size={13} />}
               onClick={() => openEdit(project)}
             >
-              编辑
+              <span className="hidden sm:inline">编辑</span>
             </Button>
             <Button
               size="sm"
@@ -164,7 +185,7 @@ export function ProjectsView() {
               icon={<Trash2 size={13} />}
               onClick={() => void removeProject(project)}
             >
-              删除
+              <span className="hidden sm:inline">删除</span>
             </Button>
           </>
         ) : (
@@ -179,7 +200,12 @@ export function ProjectsView() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[860px] px-6 pb-10 pt-2">
+        <div
+          className={clsx(
+            "mx-auto w-full max-w-[860px] pb-10 pt-2",
+            mobile ? "px-4" : "px-6",
+          )}
+        >
           {!project ? (
             <>
               <p className="text-[12.5px] leading-5 text-muted">

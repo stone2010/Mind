@@ -1,5 +1,6 @@
-import { FolderClosed, UploadCloud } from "lucide-react";
+import { FolderClosed, Menu, UploadCloud } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { clsx } from "clsx";
 import { readAttachment } from "../lib/attachments";
 import { currentModel, useAppStore } from "../store/app";
 import { useChatStore } from "../store/chat";
@@ -11,7 +12,13 @@ import { MessageList } from "./MessageList";
 
 const EMPTY: Message[] = [];
 
-export function ChatView() {
+export function ChatView({
+  mobile = false,
+  onOpenSidebar,
+}: {
+  mobile?: boolean;
+  onOpenSidebar?: () => void;
+}) {
   const activeId = useChatStore((s) => s.activeId);
   const messagesMap = useChatStore((s) => s.messages);
   const conversations = useChatStore((s) => s.conversations);
@@ -129,7 +136,21 @@ export function ChatView() {
         if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files);
       }}
     >
-      <div className="flex h-[52px] shrink-0 items-center gap-2 px-5">
+      <div
+        className={clsx(
+          "flex shrink-0 items-center gap-2",
+          mobile ? "h-12 px-3" : "h-[52px] px-5",
+        )}
+      >
+        {mobile && (
+          <button
+            onClick={onOpenSidebar}
+            aria-label="打开菜单"
+            className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-ink"
+          >
+            <Menu size={19} />
+          </button>
+        )}
         <h1 className="min-w-0 truncate text-[13.5px] font-medium text-ink">
           {conversation?.title ?? "新对话"}
         </h1>

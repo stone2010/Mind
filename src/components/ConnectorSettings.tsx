@@ -20,6 +20,7 @@ import {
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
 import { api, errorMessage } from "../lib/bridge";
+import { isMobilePlatform } from "../lib/platform";
 import {
   CONNECTOR_PRESETS,
   runtimeAvailable,
@@ -88,6 +89,7 @@ export function ConnectorSettings() {
   const [githubTesting, setGithubTesting] = useState(false);
   const [githubError, setGithubError] = useState<string | null>(null);
   const [githubDetail, setGithubDetail] = useState<string | null>(null);
+  const mobile = isMobilePlatform();
 
   const checkRuntime = async () => {
     setRuntimeBusy(true);
@@ -101,8 +103,8 @@ export function ConnectorSettings() {
   };
 
   useEffect(() => {
-    void checkRuntime();
-  }, []);
+    if (!mobile) void checkRuntime();
+  }, [mobile]);
 
   const addPreset = async (preset: ConnectorPreset) => {
     if (connectors.some((c) => c.config.name === preset.name)) return;
@@ -416,15 +418,26 @@ export function ConnectorSettings() {
       <div>
         <h2 className="text-[18px] font-semibold tracking-[-0.01em] text-ink">连接器</h2>
         <p className="mt-1 text-[12.5px] leading-5 text-muted">
-          通过本地 MCP 插件和 GitHub 账号服务把外部数据接入对话。模型只能在你逐次确认后调用工具。
+          {mobile
+            ? "在手机上通过 GitHub 账号服务读取仓库、Issue、PR 和文件。模型只能在你逐次确认后调用工具。"
+            : "通过本地 MCP 插件和 GitHub 账号服务把外部数据接入对话。模型只能在你逐次确认后调用工具。"}
         </p>
       </div>
+
+      {mobile && (
+        <div className="mt-4 rounded-xl border border-line bg-sidebar px-3.5 py-3 text-[11.5px] leading-5 text-muted">
+          Android 预览版不支持启动本地 MCP 插件进程；GitHub 连接仍可使用。GitHub Token
+          只保存在本次运行的内存中，重启应用后需要重新填写。
+        </div>
+      )}
 
       <div className="mt-6 flex items-start justify-between gap-4 rounded-xl border border-line p-4">
         <div>
           <div className="text-[13px] font-medium text-ink">允许模型在对话中使用连接器</div>
           <p className="mt-0.5 text-[12px] leading-5 text-muted">
-            关闭后，本地插件不会被启动，GitHub 工具也不会暴露；模型看不到任何工具。每次调用仍会单独请求授权。
+            {mobile
+              ? "关闭后，GitHub 工具不会暴露；模型看不到任何工具。每次调用仍会单独请求授权。"
+              : "关闭后，本地插件不会被启动，GitHub 工具也不会暴露；模型看不到任何工具。每次调用仍会单独请求授权。"}
           </p>
         </div>
         <Switch
@@ -461,8 +474,9 @@ export function ConnectorSettings() {
               </span>
             </div>
             <p className="mt-1 text-[12px] leading-5 text-muted">
-              读取仓库、Issue、Pull Request 和仓库文件。Token 只保存在 Windows
-              凭据管理器；模型每次调用工具前仍会请求你的确认。
+              {mobile
+                ? "读取仓库、Issue、Pull Request 和仓库文件。Token 只保存在本次运行的内存中；模型每次调用工具前仍会请求你的确认。"
+                : "读取仓库、Issue、Pull Request 和仓库文件。Token 只保存在 Windows 凭据管理器；模型每次调用工具前仍会请求你的确认。"}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {!github?.connected ? (
@@ -518,6 +532,8 @@ export function ConnectorSettings() {
         </div>
       </div>
 
+      {!mobile && (
+        <>
       <div className="mt-6 rounded-xl border border-line p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -736,6 +752,8 @@ export function ConnectorSettings() {
         <ShieldCheck size={13} className="mt-[3px] shrink-0" />
         连接器以你的 Windows 用户权限在本机运行。Mind 不经过任何中转服务器；工具参数和返回结果只发送给你选择的模型服务。
       </p>
+        </>
+      )}
 
       <Modal
         open={formOpen}

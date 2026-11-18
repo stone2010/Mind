@@ -5,11 +5,12 @@
 <h1 align="center">Mind</h1>
 
 <p align="center">
-  本地优先的 Windows AI 桌面客户端 · 自带 Key · 上下文与费用可控
+  本地优先的 Windows / Android AI 客户端 · 自带 Key · 上下文与费用可控
 </p>
 
 <p align="center">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows" />
+  <img alt="Android preview" src="https://img.shields.io/badge/Android-7.0%2B%20preview-3DDC84?logo=android" />
   <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri" />
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react" />
   <img alt="Version" src="https://img.shields.io/badge/version-0.1.1-346DF5" />
@@ -17,11 +18,13 @@
 
 <p align="center">
   <a href="https://github.com/stone2010/Mind/releases/tag/v0.1.1"><strong>下载 Windows 安装包</strong></a>
+  ·
+  <a href="https://github.com/stone2010/Mind/releases/tag/v0.1.1-android-preview">下载 Android 预览 APK</a>
 </p>
 
-Mind 是一个面向普通用户的 Windows 桌面 AI 客户端：安装后填入 DeepSeek API Key 就能聊天，聊天记录、记忆、用量都保存在本机。默认 100k 上下文并在超出预算时自动压缩；支持联网搜索、长期记忆、本地 MCP 插件、GitHub 只读连接，以及 Mermaid 流程图和数据图表。
+Mind 是一个面向普通用户的本地优先 AI 客户端：安装后填入 DeepSeek API Key 就能聊天，聊天记录、记忆、用量都保存在本机。默认 100k 上下文并在超出预算时自动压缩；支持联网搜索、长期记忆、本地 MCP 插件、GitHub 只读连接，以及 Mermaid 流程图和数据图表。
 
-> 当前版本为 `0.1.1`，Windows 优先，仍在持续完善。项目没有使用 Mind 自己的服务器中转请求，API Key 不会上传。
+> 当前版本为 `0.1.1`，提供 Windows 安装包与 Android 预览 APK。项目没有使用 Mind 自己的服务器中转请求，API Key 不会上传。
 
 ## 界面
 
@@ -45,11 +48,12 @@ Mind 是一个面向普通用户的 Windows 桌面 AI 客户端：安装后填�
 | 联网搜索 | DeepSeek 服务端 `deepseek_web_search`，展示搜索查询与来源卡片，支持多轮工具历史 |
 | 长期记忆 | 手动添加，或回复后由轻量模型自动提取；可开关是否注入对话 |
 | 用量与费用 | 记录真实 token（含缓存命中/未命中），DeepSeek 按官方峰谷价自动估算，其他模型可单独配价；对话标题栏实时显示「约 X 分」；可关闭 |
-| 数据备份 | 导出/导入 JSON；包含对话、消息、项目、记忆和用量，不包含密钥和设置；可合并或覆盖 |
+| 数据备份 | 导出/导入 JSON；包含对话、消息、项目、记忆和用量，不包含密钥和设置；可合并或覆盖；Android 使用复制/文件选择器 |
 | 可视化 | 渲染 Mermaid 流程图、柱状/折线/饼图；Markdown 图片点击放大 |
-| 本地 MCP 插件 | 插件中心、Node/uv 环境检测、一键添加、工具列表、失败 stderr 提示 |
-| GitHub | 使用 Personal Access Token 读取仓库、Issue、PR、搜索和文件；Token 只存 Windows 凭据管理器 |
-| 本地优先 | 对话、项目、记忆、设置、用量存在本地 SQLite；API Key / GitHub Token 存在 Windows Credential Manager |
+| 本地 MCP 插件 | 插件中心、Node/uv 环境检测、一键添加、工具列表、失败 stderr 提示（仅 Windows） |
+| GitHub | 使用 Personal Access Token 读取仓库、Issue、PR、搜索和文件；Windows 存入凭据管理器，Android 预览版仅保存在本次运行内存 |
+| 移动界面 | Android 抽屉侧栏、移动设置页、软键盘避让与系统栏安全区域；本地 MCP 在 Android 上关闭 |
+| 本地优先 | 对话、项目、记忆、设置、用量存在本地 SQLite；API Key / GitHub Token 存在 Windows Credential Manager 或 Android 会话内存 |
 | 法律与隐私 | 首次使用前的用户协议/隐私确认；协议与隐私说明随仓库公开 |
 
 ## 快速开始
@@ -73,7 +77,37 @@ src-tauri/target/release/bundle/nsis/Mind_0.1.1_x64-setup.exe
 5. 可选安装本地插件，或直接在「设置 → 连接器」中配置 GitHub；
 6. 开始聊天。
 
-### 从源码运行
+### Android 预览版
+
+Android 版使用同一套 React UI 和 Rust 后端，通过 Tauri 2 打包为 APK。当前提供 `arm64-v8a` 调试构建，最低 Android 7.0，适合尝鲜与验证，不建议作为日常主力版本。
+
+下载：[Android 预览 APK](https://github.com/stone2010/Mind/releases/tag/v0.1.1-android-preview)
+
+<p align="center">
+  <img src="docs/screenshots/android-chat.png" width="30%" alt="移动端聊天" />
+  <img src="docs/screenshots/android-drawer.png" width="30%" alt="移动端侧栏" />
+  <img src="docs/screenshots/android-connectors.png" width="30%" alt="移动端连接器" />
+</p>
+
+> 以上为 390×844 的移动布局预览（桌面 WebView 模拟 Android 视口与 UA），不是 Android 真机截图。
+
+移动端已适配：
+
+- 抽屉式历史侧栏与移动端设置导航
+- 软键盘避让、系统栏安全区域、界面内的返回按钮
+- 聊天、流式输出、Markdown / 公式 / Mermaid / 图表
+- 联网搜索、长期记忆、用量与费用、GitHub 只读连接
+- 数据备份：复制 JSON 导出，文件选择器导入
+
+Android 预览版限制：
+
+- API Key 与 GitHub Token 只保存在本次运行的内存中，重启后需重新输入；尚未接入 Android Keystore
+- 不支持本地 MCP 插件（不启动 Node/uvx 子进程），GitHub 连接保留
+- 使用 debug 签名，不适合上架或正式分发
+- 当前构建环境没有连接真机或模拟器，APK 已通过编译与静态检查，但尚未在手机上完成运行时验证
+- 备份不能直接写入系统下载目录；需复制 JSON 内容并自行保存
+
+### 从源码运行（Windows）
 
 前置条件：
 
@@ -101,6 +135,14 @@ npm run build
 ```bash
 npm run tauri build
 ```
+
+构建 Android 预览 APK（需要 JDK 17、Android SDK 36、Build Tools 36、NDK 27 与 Rust Android targets）：
+
+```bash
+npx tauri android build --apk --debug --target aarch64
+```
+
+首次构建前如果还没有 `src-tauri/gen/android`，先运行 `npx tauri android init --ci`。Windows 未开启“开发者模式”时，Tauri CLI 无法为原生库创建符号链接；需要在系统设置中开启开发者模式，或直接使用 Gradle 打包 `assembleArm64Debug` 并跳过 Rust 构建任务（详见 [Android 预览版说明](docs/release-notes-v0.1.1-android-preview.md)）。
 
 ## 上下文与省 token
 
@@ -177,11 +219,11 @@ GitHub 当前为只读连接，不支持创建/修改 Issue、提交代码或管
 
 ## 数据与隐私
 
-- 数据库：`%APPDATA%\com.mind.desktop\mind.db`
-- API Key：Windows Credential Manager（`provider:<id>`）
-- GitHub Token：Windows Credential Manager（`github:main`）
+- 数据库：Windows 为 `%APPDATA%\com.mind.desktop\mind.db`；Android 位于应用私有数据目录
+- API Key：Windows Credential Manager（`provider:<id>`）；Android 预览版仅保存在本次运行的内存
+- GitHub Token：Windows Credential Manager（`github:main`）；Android 预览版仅保存在本次运行的内存
 - 模型请求直接发往你选择的模型服务商，不经过 Mind 中转
-- MCP 插件以当前 Windows 用户权限在本机运行；每次工具调用都需要你批准
+- MCP 插件以当前 Windows 用户权限在本机运行；每次工具调用都需要你批准；Android 预览版不启动本地 MCP
 - GitHub 数据会发送给 GitHub 与所选模型服务；工具结果会进入模型上下文
 
 ### 导出与备份
@@ -190,6 +232,7 @@ GitHub 当前为只读连接，不支持创建/修改 Issue、提交代码或管
 
 - 导出 JSON：包含对话、消息、项目、记忆和用量；不包含 API Key、GitHub Token、连接器凭据和设置
 - 导入：默认按 ID 合并；也可以开启“覆盖现有数据”清空后恢复
+- Android 预览版：导出时复制 JSON 内容并保存为文件；导入时从系统文件选择器读取
 - 备份文件可能包含隐私内容，请存放在可信位置
 - 局域网自动同步尚未实现；可把备份放入同步盘（OneDrive、坚果云等）手动迁移
 
@@ -224,7 +267,7 @@ src-tauri/src/
 scripts/dev/      CDP 驱动、OpenAI / MCP / GitHub Mock 服务
 ```
 
-技术栈：Tauri 2、Rust、React 19、TypeScript、Vite 6、Tailwind CSS 3、Zustand、SQLite、Windows Credential Manager、Mermaid。
+技术栈：Tauri 2、Rust、React 19、TypeScript、Vite 6、Tailwind CSS 3、Zustand、SQLite、Windows Credential Manager、Mermaid。Android 使用 Tauri 2 移动端、Gradle 与 Android SDK 36 / NDK 27。
 
 ## 验证状态
 
@@ -237,10 +280,12 @@ scripts/dev/      CDP 驱动、OpenAI / MCP / GitHub Mock 服务
 - 本地 GitHub REST Mock：Token 验证、Token 不落入 SQLite、仓库/Issue/PR/搜索/文件工具、PR 过滤
 - 上下文压缩：20 条长历史 + 新问题、4k 预算，摘要覆盖 18 条，后续请求只发送摘要 + 4 条消息
 - 用量与费用：真实 usage（含缓存命中/未命中）累计、DeepSeek 官方峰谷价与汇率换算、每对话费用实时显示、非 DS 模型价格配置
-- 数据备份：导出 JSON、校验不包含密钥、合并导入、覆盖导入
+- 数据备份：导出 JSON、校验不包含密钥、合并导入、覆盖导入；Android 模式的 JSON 导出与文件导入入口
 - 法律确认：用户协议/隐私说明确认门禁、关于页入口
 - 可视化：Mermaid、双系列柱状图、图片放大
 - 首次配置：完整引导流程、100k 默认上下文、插件环境检测
+- 移动布局：390×844 视口 + Android UA 下验证抽屉侧栏、移动设置导航、Android 连接器限制、数据备份入口，页面无横向溢出
+- Android APK：编译成功，包名 `com.mind.desktop`、版本 0.1.1、minSdk 24、targetSdk 36，包含 arm64 原生库并通过调试签名校验
 
 未验证 / 已知限制：
 
@@ -250,7 +295,8 @@ scripts/dev/      CDP 驱动、OpenAI / MCP / GitHub Mock 服务
 - 自动压缩摘要为模型二次生成，可能遗漏细节
 - 目前仅支持本地 stdio MCP；不支持远程 HTTP/SSE MCP、OAuth 和 MCP resources/prompts
 - 未实现深度研究、语音、图像生成、Canvas、GPTs、定时任务、云同步、多设备与分享
-- **Android APK 尚未发布**：当前机器没有 JDK / Android SDK / NDK；移动端还需要安全存储替代方案、响应式界面和禁用本地 MCP 进程，是独立的移植任务
+- **Android 预览版未在真机或模拟器上运行验证**：当前构建环境没有连接设备；已通过编译、前端类型检查和 APK 静态检查，但启动、软键盘、文件选择器与真实 API 请求仍需在手机上确认
+- Android 预览版尚未接入 Android Keystore，API Key 与 GitHub Token 只在本次运行内存中；不支持本地 MCP 插件，使用 debug 签名
 - 局域网自动同步尚未实现；目前提供 JSON 导出/导入，可放入 OneDrive、坚果云等同步盘手动迁移
 - 未做多实例互斥、自动更新与代码签名
 
@@ -265,7 +311,7 @@ scripts/dev/      CDP 驱动、OpenAI / MCP / GitHub Mock 服务
 
 ## Roadmap
 
-- Android 移动端（独立移植：安全存储、响应式 UI、无本地 MCP）
+- Android 正式版：Android Keystore、发布签名、真机回归与上架准备
 - QQ 邮箱 / IMAP 连接器与安全授权码管理
 - 远程 MCP、OAuth 与更多 SaaS 连接器
 - GitHub 写操作（创建 Issue、评论、分支与 PR）

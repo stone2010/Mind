@@ -179,29 +179,51 @@ fn usage_rows(conn: &rusqlite::Connection) -> Result<Vec<UsageLog>, String> {
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn data_export(state: State<'_, AppState>, path: String) -> Result<ExportResult, String> {
-    let conn = state.db.conn.lock().unwrap();
-    let backup = Backup {
+fn build_backup(conn: &rusqlite::Connection) -> Result<Backup, String> {
+    Ok(Backup {
         format: FORMAT.into(),
         version: VERSION,
         exported_at: now_millis(),
-        conversations: conversation_rows(&conn)?,
-        messages: message_rows(&conn)?,
-        projects: project_rows(&conn)?,
-        memories: memory_rows(&conn)?,
-        usage: usage_rows(&conn)?,
-    };
+        conversations: conversation_rows(conn)?,
+        messages: message_rows(conn)?,
+        projects: project_rows(conn)?,
+        memories: memory_rows(conn)?,
+        usage: usage_rows(conn)?,
+    })
+}
+
+fn export_counts(backup: &Backup) -> (usize, usize, usize, usize, usize) {
+    (
+        backup.conversations.len(),
+        backup.messages.len(),
+        backup.projects.len(),
+        backup.memories.len(),
+        backup.usage.len(),
+    )
+}
+
+#[tauri::command]
+pub fn data_export(state: State<'_, AppState>, path: String) -> Result<ExportResult, String> {
+    let conn = state.db.conn.lock().unwrap();
+    let backup = build_backup(&conn)?;
     let json = serde_json::to_string_pretty(&backup).map_err(|e| e.to_string())?;
     std::fs::write(&path, json).map_err(|e| format!("无法写入备份文件: {e}"))?;
+    let (conversations, messages, projects, memories, usage) = export_counts(&backup);
     Ok(ExportResult {
         path,
-        conversations: backup.conversations.len(),
-        messages: backup.messages.len(),
-        projects: backup.projects.len(),
-        memories: backup.memories.len(),
-        usage: backup.usage.len(),
+        conversations,
+        messages,
+        projects,
+        memories,
+        usage,
     })
+}
+
+#[tauri::command]
+pub fn data_export_json(state: State<'_, AppState>) -> Result<String, String> {
+    let conn = state.db.conn.lock().unwrap();
+    let backup = build_backup(&conn)?;
+    serde_json::to_string_pretty(&backup).map_err(|e| e.to_string())
 }
 
 fn insert_project(tx: &rusqlite::Transaction, item: &Project) -> Result<(), String> {
@@ -320,15 +342,13 @@ fn insert_usage(tx: &rusqlite::Transaction, item: &UsageLog) -> Result<(), Strin
     Ok(())
 }
 
-#[tauri::command]
-pub fn data_import(
-    state: State<'_, AppState>,
-    path: String,
+fn import_content(
+    state: &AppState,
+    content: &str,
     replace: bool,
 ) -> Result<ImportResult, String> {
-    let content = std::fs::read_to_string(&path).map_err(|e| format!("无法读取备份文件: {e}"))?;
     let backup: Backup =
-        serde_json::from_str(&content).map_err(|e| format!("备份格式无效: {e}"))?;
+        serde_json::from_str(content).map_err(|e| format!("备份格式无效: {e}"))?;
     if backup.format != FORMAT {
         return Err("这不是 Mind 备份文件".into());
     }
@@ -371,4 +391,23 @@ pub fn data_import(
         usage: backup.usage.len(),
         replaced: replace,
     })
+}
+
+#[tauri::command]
+pub fn data_import(
+    state: State<'_, AppState>,
+    path: String,
+    replace: bool,
+) -> Result<ImportResult, String> {
+    let content = std::fs::read_to_string(&path).map_err(|e| format!("无法读取备份文件: {e}"))?;
+    import_content(&state, &content, replace)
+}
+
+#[tauri::command]
+pub fn data_import_json(
+    state: State<'_, AppState>,
+    content: String,
+    replace: bool,
+) -> Result<ImportResult, String> {
+    import_content(&state, &content, replace)
 }
