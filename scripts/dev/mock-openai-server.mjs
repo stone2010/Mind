@@ -68,7 +68,7 @@ const server = createServer((req, res) => {
       ? parsed.messages.filter((m) => m.role === "assistant")
       : [];
     const isMemoryCall = (parsed.messages || []).some(
-      (m) => m.role === "system" && String(m.content).includes("自动记忆提取器"),
+      (m) => m.role === "system" && String(m.content).includes("记忆提取"),
     );
     const memoryInjected = (parsed.messages || []).some(
       (m) =>
@@ -101,7 +101,7 @@ const server = createServer((req, res) => {
     const systemText = Array.isArray(parsed.messages)
       ? parsed.messages.find((m) => m.role === "system")?.content || ""
       : "";
-    const isMemoryExtraction = systemText.includes("自动记忆提取器");
+    const isMemoryExtraction = systemText.includes("记忆提取");
     const isCompression = systemText.includes("对话压缩器");
     if (isCompression) console.log("[mock] context compression call");
 
@@ -109,9 +109,27 @@ const server = createServer((req, res) => {
       const content = isMemoryExtraction
         ? JSON.stringify({
             memories: [
-              "用户偏好简洁、直接的中文回答。",
-              "用户正在开发一款名为 Mind 的 Windows 桌面 AI 客户端。",
-              "用户希望默认使用 DeepSeek Flash。",
+              {
+                type: "preference",
+                subject: "response_style",
+                content: "用户偏好简洁、直接的中文回答。",
+                confidence: 0.95,
+                importance: 0.9,
+              },
+              {
+                type: "project",
+                subject: "project_mind",
+                content: "用户正在开发一款名为 Mind 的 Windows 桌面 AI 客户端。",
+                confidence: 0.9,
+                importance: 0.95,
+              },
+              {
+                type: "preference",
+                subject: "preferred_model",
+                content: "用户希望默认使用 DeepSeek Flash。",
+                confidence: 0.85,
+                importance: 0.7,
+              },
             ],
           })
         : isCompression
@@ -264,7 +282,34 @@ const server = createServer((req, res) => {
       await wait(80);
       sse(res, { choices: [{ index: 0, delta: { reasoning_content: part }, finish_reason: null }] });
     }
-    for (const part of CONTENT) {
+    const asksClarification = String(lastMessage?.content || "").includes("帮我选");
+    const asksTextQuestion = String(lastMessage?.content || "").includes("问我一个问题");
+    const asksVisual = String(lastMessage?.content || "").includes("画图");
+    const contentParts = asksClarification
+      ? [
+          "为了给你更合适的方案，我需要确认一点：\n\n",
+          "```ask\n",
+          "Q1 你希望优先做什么？\n",
+          "- A. 快速原型（推荐）\n",
+          "- B. 长期维护\n",
+          "```\n",
+        ]
+      : asksTextQuestion
+        ? [
+            "为了给你更准确的回答，我需要确认：\n\n",
+            "```ask\n",
+            "Q1 你的目标平台是什么？\n",
+            "```\n",
+          ]
+        : asksVisual
+          ? [
+              "下面是可视化结果：\n\n",
+              '```chart\n{"type":"bar","title":"月度销量","subtitle":"按渠道拆分","unit":"万元","labels":["1月","2月","3月","4月"],"series":[{"name":"线上","values":[42,58,65,81]},{"name":"线下","values":[30,36,41,45]}]}\n```\n\n',
+              '```chart\n{"type":"pie","title":"渠道占比","unit":"%","labels":["直销","代理","线上"],"series":[{"name":"占比","values":[45,30,25]}]}\n```\n\n',
+              "```mermaid\ngraph TD\n  A[用户问题] --> B{需要记忆?}\n  B -->|是| C[检索记忆]\n  B -->|否| D[直接回答]\n```\n",
+            ]
+          : CONTENT;
+    for (const part of contentParts) {
       await wait(70);
       sse(res, { choices: [{ index: 0, delta: { content: part }, finish_reason: null }] });
     }

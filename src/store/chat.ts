@@ -85,7 +85,7 @@ function scheduleMemoryExtraction(
   const turns: ChatTurn[] = messages
     .filter((m) => (m.role === "user" || m.role === "assistant") && m.content.trim())
     .slice(-8)
-    .map((m) => ({ role: m.role, content: m.content, images: [] }));
+    .map((m) => ({ id: m.id, role: m.role, content: m.content, images: [] }));
   if (!turns.some((t) => t.role === "user")) return;
 
   window.setTimeout(async () => {
@@ -347,7 +347,7 @@ function buildTurns(history: Message[]): ChatTurn[] {
       .filter((a) => a.kind === "image" && a.dataUrl)
       .map((a) => a.dataUrl as string);
     if (!content.trim() && images.length === 0) continue;
-    const turn: ChatTurn = { role: m.role, content, images };
+    const turn: ChatTurn = { id: m.id, role: m.role, content, images };
     if (m.role === "assistant") {
       if (m.reasoning) turn.reasoning = m.reasoning;
       if (m.serverToolCalls) {
@@ -372,7 +372,7 @@ function pickMemoriesFor(
   settings: { memoryRecall?: "recall" | "recent" },
   history: Message[],
 ): string[] {
-  const all = useAppStore.getState().memories;
+  const all = useAppStore.getState().memories.filter((m) => m.status === "active");
   if (all.length === 0) return [];
   if (settings.memoryRecall !== "recall") {
     return all.map((m) => m.content);
@@ -782,10 +782,21 @@ async function startAssistant(conversationId: string, history: Message[]) {
     stopping: false,
   });
 
-  const memories =
-    settings.longTermMemory
-      ? pickMemoriesFor(settings, requestHistory)
-      : [];
+  let memories: string[] = [];
+  if (settings.longTermMemory) {
+    const query =
+      [...requestHistory].reverse().find((m) => m.role === "user")?.content ?? "";
+    try {
+      memories = await api.memoryRecall(
+        query,
+        settings.memoryRecall,
+        settings.memoryRecall === "recent" ? 24 : 8,
+      );
+    } catch {
+      // Older app data or a missing FTS index: keep the local ranking fallback.
+      memories = pickMemoriesFor(settings, requestHistory);
+    }
+  }
 
   try {
     const customInstructions = settings.customInstructions?.trim();

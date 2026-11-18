@@ -15,6 +15,8 @@ import type {
   ImportResult,
   Conversation,
   Memory,
+  MemoryConsolidateResult,
+  MemoryHistory,
   Message,
   Project,
   ProviderConfig,
@@ -120,9 +122,35 @@ export const api = {
 
   listMemories: () => invoke<Memory[]>("db_list_memories"),
   createMemory: (content: string) => invoke<Memory>("db_create_memory", { content }),
+  createMemoryTyped: (
+    content: string,
+    memoryType: Memory["type"],
+    subject?: string,
+  ) =>
+    invoke<Memory>("db_create_memory_typed", {
+      content,
+      memoryType,
+      subject: subject ?? null,
+    }),
   updateMemory: (id: string, content: string) =>
     invoke<void>("db_update_memory", { id, content }),
   deleteMemory: (id: string) => invoke<void>("db_delete_memory", { id }),
+  searchMemories: (query: string, limit = 20) =>
+    invoke<Memory[]>("db_search_memories", { query, limit }),
+  memoryRecall: (
+    query: string,
+    mode: "recall" | "recent",
+    limit?: number,
+  ) =>
+    invoke<string[]>("db_memory_recall", {
+      query,
+      mode,
+      limit: limit ?? null,
+    }),
+  memoryHistory: (id: string) =>
+    invoke<MemoryHistory>("db_memory_history", { id }),
+  consolidateMemories: () =>
+    invoke<MemoryConsolidateResult>("db_memory_consolidate"),
   memoryAutoExtract: (
     providerId: string,
     modelId: string,

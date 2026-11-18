@@ -4,7 +4,8 @@
 //        node scripts/cdp.mjs info
 import { writeFileSync } from "node:fs";
 
-const pages = await (await fetch("http://127.0.0.1:9222/json/list")).json();
+const port = process.env.CDP_PORT || "9222";
+const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
 const page = pages.find((p) => p.type === "page");
 if (!page) {
   console.error("no page");

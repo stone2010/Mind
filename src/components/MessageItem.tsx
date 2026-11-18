@@ -21,7 +21,7 @@ import { pushToast } from "../store/toast";
 import type { Attachment, Message } from "../types";
 import { copyText, formatBytes, formatTime, parseAttachments } from "../lib/utils";
 import { ConnectorPanel, parseConnectorCalls } from "./ConnectorPanel";
-import { AskRenderer } from "./AskBlock";
+import { AskRenderer, stripAskBlocks } from "./AskBlock";
 import { Markdown } from "./Markdown";
 import { SearchPanel, parseSources } from "./SearchPanel";
 import { IconButton } from "./ui";
@@ -277,6 +277,7 @@ export function MessageItem({
     );
   }
 
+  const visibleContent = stripAskBlocks(message.content);
   const hasContent = message.content.trim().length > 0;
   const showError = message.status === "error";
   const showStopped = message.status === "stopped" && !streaming;
@@ -294,7 +295,7 @@ export function MessageItem({
         />
       )}
 
-      {hasContent && <Markdown content={message.content} live={streaming} />}
+      {visibleContent && <Markdown content={visibleContent} live={streaming} />}
 
       {!streaming && (
         <AskRenderer content={message.content} messageId={message.id} />

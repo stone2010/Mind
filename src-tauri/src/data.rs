@@ -129,22 +129,13 @@ fn project_rows(conn: &rusqlite::Connection) -> Result<Vec<Project>, String> {
 
 fn memory_rows(conn: &rusqlite::Connection) -> Result<Vec<Memory>, String> {
     let mut stmt = conn
-        .prepare(
-            "SELECT id, content, source, source_conversation_id, created_at, updated_at
-             FROM memories ORDER BY created_at ASC",
-        )
+        .prepare(&format!(
+            "SELECT {} FROM memories ORDER BY created_at ASC",
+            crate::commands::MEMORY_COLUMNS
+        ))
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([], |r| {
-            Ok(Memory {
-                id: r.get(0)?,
-                content: r.get(1)?,
-                source: r.get(2)?,
-                source_conversation_id: r.get(3)?,
-                created_at: r.get(4)?,
-                updated_at: r.get(5)?,
-            })
-        })
+        .query_map([], crate::commands::memory_from_row)
         .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
@@ -301,13 +292,25 @@ fn insert_message(tx: &rusqlite::Transaction, item: &Message) -> Result<(), Stri
 fn insert_memory(tx: &rusqlite::Transaction, item: &Memory) -> Result<(), String> {
     tx.execute(
         "INSERT OR REPLACE INTO memories
-         (id, content, source, source_conversation_id, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+         (id, memory_type, subject, content, source, source_conversation_id,
+          source_message_id, confidence, importance, status, valid_from,
+          valid_until, last_accessed_at, metadata, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         params![
             item.id,
+            item.memory_type,
+            item.subject,
             item.content,
             item.source,
             item.source_conversation_id,
+            item.source_message_id,
+            item.confidence,
+            item.importance,
+            item.status,
+            item.valid_from,
+            item.valid_until,
+            item.last_accessed_at,
+            item.metadata,
             item.created_at,
             item.updated_at
         ],
@@ -361,6 +364,8 @@ fn import_content(
     if replace {
         tx.execute("DELETE FROM messages", []).map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM usage_logs", []).map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM memory_versions", []).map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM memory_sources", []).map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM memories", []).map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM conversations", []).map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM projects", []).map_err(|e| e.to_string())?;

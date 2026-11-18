@@ -1304,6 +1304,7 @@ mod context_tests {
 
     fn test_turn(role: &str, content: &str) -> ChatTurn {
         ChatTurn {
+            id: None,
             role: role.into(),
             content: content.into(),
             images: Vec::new(),

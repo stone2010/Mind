@@ -107,13 +107,64 @@ export interface Project {
   conversationCount: number;
 }
 
+export type MemoryType =
+  | "profile"
+  | "preference"
+  | "project"
+  | "episodic"
+  | "knowledge";
+
+export type MemoryStatus = "active" | "superseded" | "expired";
+
 export interface Memory {
   id: string;
+  type: MemoryType;
+  subject: string;
   content: string;
   source: "manual" | "auto";
   sourceConversationId?: string | null;
+  sourceMessageId?: string | null;
+  confidence: number;
+  importance: number;
+  status: MemoryStatus;
+  validFrom?: number | null;
+  validUntil?: number | null;
+  lastAccessedAt?: number | null;
+  metadata?: string | null;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface MemoryVersion {
+  id: string;
+  memoryId: string;
+  content: string;
+  type: MemoryType;
+  subject: string;
+  status: MemoryStatus;
+  confidence: number;
+  importance: number;
+  changedAt: number;
+  reason: string;
+}
+
+export interface MemorySource {
+  id: number;
+  memoryId: string;
+  conversationId?: string | null;
+  messageId?: string | null;
+  createdAt: number;
+}
+
+export interface MemoryHistory {
+  versions: MemoryVersion[];
+  sources: MemorySource[];
+}
+
+export interface MemoryConsolidateResult {
+  superseded: number;
+  merged: number;
+  active: number;
 }
 
 export interface ModelConfig {
@@ -136,6 +187,7 @@ export interface ProviderConfig {
 }
 
 export interface ChatTurn {
+  id?: string | null;
   role: string;
   content: string;
   images: string[];
