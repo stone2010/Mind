@@ -23,6 +23,7 @@ export function ChatView({
   const messagesMap = useChatStore((s) => s.messages);
   const conversations = useChatStore((s) => s.conversations);
   const streaming = useChatStore((s) => s.streaming);
+  const starting = useChatStore((s) => s.starting);
   const send = useChatStore((s) => s.send);
   const pendingProjectId = useChatStore((s) => s.pendingProjectId);
   const settings = useAppStore((s) => s.settings);
@@ -78,7 +79,7 @@ export function ChatView({
   };
 
   const handleSend = async () => {
-    if (streaming) return;
+    if (streaming || starting) return;
     const model = currentModel();
     if (!settings.demoMode && !keyPresent[settings.providerId]) {
       pushToast({ kind: "error", title: "尚未配置 API Key，请先连接模型。" });

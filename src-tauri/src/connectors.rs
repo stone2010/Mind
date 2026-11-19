@@ -37,6 +37,102 @@ fn truncate_chars(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }
 
+fn is_sensitive_key(raw: &str) -> bool {
+    let key = raw
+        .trim_matches(|c| {
+            matches!(
+                c,
+                '"' | '\'' | '-' | ':' | '{' | '}' | '[' | ']' | ',' | ' '
+            )
+        })
+        .to_lowercase();
+    [
+        "token",
+        "api_key",
+        "apikey",
+        "api-key",
+        "key",
+        "secret",
+        "password",
+        "passwd",
+        "authorization",
+        "auth",
+        "bearer",
+    ]
+    .iter()
+    .any(|part| key == *part || key.ends_with(&format!("_{part}")) || key.ends_with(&format!("-{part}")))
+}
+
+fn looks_like_secret(token: &str) -> bool {
+    let lower = token.to_lowercase();
+    if ["sk-", "ghp_", "github_pat_", "glpat-", "xoxb-", "xoxp-"]
+        .iter()
+        .any(|prefix| lower.starts_with(prefix))
+    {
+        return true;
+    }
+    let digits = token.chars().filter(|c| c.is_ascii_digit()).count();
+    let letters = token.chars().filter(|c| c.is_ascii_alphabetic()).count();
+    token.len() >= 32
+        && digits >= 4
+        && letters >= 4
+        && !token.contains('/')
+        && !token.contains('\\')
+        && !token.contains('.')
+}
+
+/// Redacts credentials that a child process may print to stderr or echo in an
+/// error. This is intentionally applied before any text reaches the UI.
+pub(crate) fn redact_sensitive(text: &str) -> String {
+    text.split('\n')
+        .map(|line| {
+            let mut out = String::new();
+            let mut mask_next = false;
+            for (index, token) in line.split_whitespace().enumerate() {
+                if index > 0 {
+                    out.push(' ');
+                }
+                if mask_next {
+                    out.push_str("***");
+                    mask_next = token.to_lowercase().starts_with("bearer");
+                    continue;
+                }
+                let assignment = token
+                    .split_once('=')
+                    .map(|(key, value)| ("=", key, value))
+                    .or_else(|| {
+                        token
+                            .split_once(':')
+                            .map(|(key, value)| (":", key, value))
+                    });
+                if let Some((separator, key, value)) = assignment {
+                    if is_sensitive_key(key) {
+                        out.push_str(key);
+                        out.push_str(separator);
+                        out.push_str("***");
+                        if value.is_empty() {
+                            mask_next = true;
+                        }
+                        continue;
+                    }
+                }
+                if is_sensitive_key(token) {
+                    out.push_str(token);
+                    mask_next = true;
+                    continue;
+                }
+                if looks_like_secret(token) {
+                    out.push_str("***");
+                    continue;
+                }
+                out.push_str(token);
+            }
+            out
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn sanitize_name(raw: &str, max: usize) -> String {
     let mut out: String = raw
         .chars()
@@ -223,10 +319,11 @@ impl McpClient {
                 .collect::<Vec<_>>()
                 .join("\n");
             client.stop().await;
+            let error = redact_sensitive(&error);
             return Err(if tail.trim().is_empty() {
                 error
             } else {
-                format!("{error}\n{tail}")
+                format!("{error}\n{}", redact_sensitive(&tail))
             });
         }
         Ok(client)
@@ -265,7 +362,7 @@ impl McpClient {
                         .get("message")
                         .and_then(|m| m.as_str())
                         .unwrap_or("连接器返回了错误");
-                    return Err(message.to_string());
+                    return Err(redact_sensitive(message));
                 }
                 Ok(value.get("result").cloned().unwrap_or(Value::Null))
             }
@@ -355,8 +452,18 @@ impl McpClient {
                 json!({"name": name, "arguments": arguments}),
                 Duration::from_secs(120),
             )
-            .await?;
-        Ok(convert_tool_result(&result))
+            .await;
+        match result {
+            Ok(value) => Ok(convert_tool_result(&value)),
+            Err(error) => {
+                // A hung server would otherwise block every later call.
+                // Kill it; ConnectorManager restarts it on the next request.
+                if error.contains("请求超时") {
+                    self.stop().await;
+                }
+                Err(error)
+            }
+        }
     }
 
     pub async fn stop(&self) {
@@ -416,6 +523,7 @@ struct Entry {
     client: Option<Arc<McpClient>>,
     error: Option<String>,
     connecting: bool,
+    config: ConnectorConfig,
 }
 
 pub struct ConnectorManager {
@@ -438,6 +546,7 @@ impl ConnectorManager {
             let mut map = self.inner.lock().await;
             match map.get_mut(id) {
                 Some(entry) => {
+                    entry.config = config.clone();
                     if let Some(client) = &entry.client {
                         if client.is_alive() {
                             return Ok(client.clone());
@@ -455,6 +564,7 @@ impl ConnectorManager {
                             client: None,
                             error: None,
                             connecting: true,
+                            config: config.clone(),
                         },
                     );
                     starter = true;
@@ -489,8 +599,10 @@ impl ConnectorManager {
             client: None,
             error: None,
             connecting: false,
+            config: config.clone(),
         });
         entry.connecting = false;
+        entry.config = config.clone();
         match result {
             Ok(client) => {
                 entry.client = Some(client.clone());
@@ -513,7 +625,13 @@ impl ConnectorManager {
             .map(|c| c.is_alive())
             .unwrap_or(false);
         let connecting = entry.map(|e| e.connecting).unwrap_or(false);
-        let error = entry.and_then(|e| e.error.clone());
+        let error = entry.and_then(|e| e.error.clone()).or_else(|| {
+            if entry.and_then(|e| e.client.as_ref()).is_some() && !connected {
+                Some("连接器进程已退出，可点击「连接」重启。".to_string())
+            } else {
+                None
+            }
+        });
         let tools = entry
             .and_then(|e| e.client.as_ref())
             .filter(|c| c.is_alive())
@@ -554,9 +672,26 @@ impl ConnectorManager {
             .cloned()
     }
 
+    /// Returns a live client, restarting a crashed process once before a tool
+    /// call begins. A call that already started is never retried: replaying it
+    /// could duplicate a side effect.
+    pub async fn client_or_restart(&self, id: &str) -> Option<Arc<McpClient>> {
+        if let Some(client) = self.client(id).await {
+            return Some(client);
+        }
+        let config = {
+            let map = self.inner.lock().await;
+            map.get(id).map(|entry| entry.config.clone())
+        }?;
+        self.ensure(&config).await.ok()
+    }
+
     pub async fn connect_all(self: &Arc<Self>, configs: Vec<ConnectorConfig>) {
         let mut tasks = Vec::new();
-        for config in configs.into_iter().filter(|c| c.enabled) {
+        for config in configs
+            .into_iter()
+            .filter(|c| c.enabled && c.trusted)
+        {
             let manager = self.clone();
             tasks.push(tokio::spawn(async move {
                 let _ = manager.ensure(&config).await;
@@ -596,7 +731,7 @@ pub async fn build_tool_bundle(
     let mut defs: Vec<Value> = Vec::new();
     let mut routes: HashMap<String, ToolRoute> = HashMap::new();
 
-    for config in configs.iter().filter(|c| c.enabled) {
+    for config in configs.iter().filter(|c| c.enabled && c.trusted) {
         let Ok(client) = manager.ensure(config).await else {
             continue;
         };
@@ -720,6 +855,7 @@ fn validate(config: &ConnectorConfig) -> Result<ConnectorConfig, String> {
         command: command.to_string(),
         args,
         enabled: config.enabled,
+        trusted: config.trusted,
     })
 }
 
@@ -734,20 +870,46 @@ pub async fn connector_save(
     }
     let mut configs = load_configs(&state.db);
     let previous = configs.iter().find(|c| c.id == config.id).cloned();
+    let changed = previous
+        .as_ref()
+        .map(|p| p.command != config.command || p.args != config.args)
+        .unwrap_or(true);
+    if changed {
+        // A changed command must be reviewed again, even when the old entry
+        // was trusted. The UI confirms the exact command before saving.
+        config.trusted = false;
+    }
     match configs.iter_mut().find(|c| c.id == config.id) {
         Some(existing) => *existing = config.clone(),
         None => configs.push(config.clone()),
     }
     save_configs(&state.db, &configs)?;
 
-    let changed = previous
-        .as_ref()
-        .map(|p| p.command != config.command || p.args != config.args)
-        .unwrap_or(true);
-    if changed || !config.enabled {
+    if changed || !config.enabled || !config.trusted {
         state.connectors.disconnect(&config.id).await;
     }
-    if config.enabled {
+    if config.enabled && config.trusted {
+        let _ = state.connectors.ensure(&config).await;
+    }
+    Ok(state.connectors.status(&config).await)
+}
+
+#[tauri::command]
+pub async fn connector_set_trusted(
+    state: State<'_, AppState>,
+    id: String,
+    trusted: bool,
+) -> Result<ConnectorInfo, String> {
+    let mut configs = load_configs(&state.db);
+    let Some(config) = configs.iter_mut().find(|c| c.id == id) else {
+        return Err("连接器不存在".into());
+    };
+    config.trusted = trusted;
+    let config = config.clone();
+    save_configs(&state.db, &configs)?;
+    if !trusted {
+        state.connectors.disconnect(&config.id).await;
+    } else if config.enabled {
         let _ = state.connectors.ensure(&config).await;
     }
     Ok(state.connectors.status(&config).await)
@@ -775,7 +937,7 @@ pub async fn connector_set_enabled(
     config.enabled = enabled;
     let config = config.clone();
     save_configs(&state.db, &configs)?;
-    if enabled {
+    if enabled && config.trusted {
         let _ = state.connectors.ensure(&config).await;
     } else {
         state.connectors.disconnect(&config.id).await;
@@ -819,4 +981,46 @@ pub fn connector_approve(
         let _ = tx.send(approved);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacts_common_credentials_from_child_output() {
+        let text = "starting with --token abc123\n\
+                    Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz0123456789\n\
+                    api_key=sk-secret-value\n\
+                    token: colon-secret\n\
+                    {\"token\":\"json-secret\"}\n\
+                    server started on port 8080";
+        let redacted = redact_sensitive(text);
+        assert!(!redacted.contains("abc123"), "{redacted}");
+        assert!(
+            !redacted.contains("ghp_abcdefghijklmnopqrstuvwxyz0123456789"),
+            "{redacted}"
+        );
+        assert!(!redacted.contains("sk-secret-value"), "{redacted}");
+        assert!(!redacted.contains("colon-secret"), "{redacted}");
+        assert!(!redacted.contains("json-secret"), "{redacted}");
+        assert!(redacted.contains("--token ***"), "{redacted}");
+        assert!(redacted.contains("api_key=***"), "{redacted}");
+        assert!(redacted.contains("port 8080"), "{redacted}");
+    }
+
+    #[test]
+    fn legacy_connector_is_trusted_and_explicit_false_is_kept() {
+        let legacy: ConnectorConfig = serde_json::from_str(
+            r#"{"id":"c1","name":"旧插件","command":"npx","args":[],"enabled":true}"#,
+        )
+        .unwrap();
+        assert!(legacy.trusted);
+
+        let explicit: ConnectorConfig = serde_json::from_str(
+            r#"{"id":"c2","name":"新插件","command":"npx","args":[],"enabled":true,"trusted":false}"#,
+        )
+        .unwrap();
+        assert!(!explicit.trusted);
+    }
 }

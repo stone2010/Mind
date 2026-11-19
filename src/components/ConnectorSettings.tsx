@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   ShieldCheck,
+  ShieldOff,
   Trash2,
   Wrench,
 } from "lucide-react";
@@ -57,7 +58,74 @@ function formConfig(form: FormState): ConnectorConfig {
       .map((line) => line.trim())
       .filter(Boolean),
     enabled: true,
+    trusted: false,
   };
+}
+
+function isSensitiveKey(raw: string): boolean {
+  const key = raw.replace(/^-+/, "").replace(/:$/, "").toLowerCase();
+  return [
+    "token",
+    "api_key",
+    "apikey",
+    "api-key",
+    "key",
+    "secret",
+    "password",
+    "passwd",
+    "authorization",
+    "auth",
+    "bearer",
+  ].some(
+    (part) =>
+      key === part ||
+      key.endsWith(`_${part}`) ||
+      key.endsWith(`-${part}`),
+  );
+}
+
+function commandPreview(config: Pick<ConnectorConfig, "command" | "args">): string {
+  const parts: string[] = [];
+  let maskNext = false;
+  for (const arg of [config.command, ...config.args]) {
+    if (maskNext) {
+      parts.push("***");
+      maskNext = false;
+      continue;
+    }
+    const equals = arg.indexOf("=");
+    if (equals > 0) {
+      const key = arg.slice(0, equals);
+      if (isSensitiveKey(key)) {
+        parts.push(`${key}=***`);
+        continue;
+      }
+    }
+    if (isSensitiveKey(arg)) {
+      parts.push(arg);
+      maskNext = true;
+      continue;
+    }
+    if (/^(sk-|ghp_|github_pat_|glpat-|xox[baprs]-)/i.test(arg)) {
+      parts.push("***");
+      continue;
+    }
+    parts.push(arg);
+  }
+  return parts.join(" ");
+}
+
+function isTrusted(info: ConnectorInfo): boolean {
+  return info.config.trusted !== false;
+}
+
+async function confirmConnectorStart(config: ConnectorConfig): Promise<boolean> {
+  return confirmDialog({
+    title: "确认启动这个本地连接器？",
+    body: `Mind 将以你的 Windows 用户权限启动以下进程：\n\n${commandPreview(config)}\n\n请确认命令和参数来自可信来源。启动确认和逐次工具审批都不是进程沙箱：该进程仍可能访问你的文件、网络和凭据。`,
+    confirmLabel: "信任并启动",
+    danger: false,
+  });
 }
 
 export function ConnectorSettings() {
@@ -106,6 +174,14 @@ export function ConnectorSettings() {
     if (!mobile) void checkRuntime();
   }, [mobile]);
 
+  const saveTrusted = async (config: ConnectorConfig): Promise<ConnectorInfo> => {
+    const saved = await api.connectorSave({ ...config, trusted: false });
+    if (!saved.config.trusted) {
+      return api.connectorSetTrusted(saved.config.id, true);
+    }
+    return saved;
+  };
+
   const addPreset = async (preset: ConnectorPreset) => {
     if (connectors.some((c) => c.config.name === preset.name)) return;
     if (!runtimeAvailable(preset, runtime)) {
@@ -132,15 +208,18 @@ export function ConnectorSettings() {
       setFormOpen(true);
       return;
     }
+    const presetConfig: ConnectorConfig = {
+      id: "",
+      name: preset.name,
+      command: preset.command,
+      args: preset.args,
+      enabled: true,
+      trusted: false,
+    };
+    if (!(await confirmConnectorStart(presetConfig))) return;
     setPresetBusy(preset.id);
     try {
-      const info = await api.connectorSave({
-        id: "",
-        name: preset.name,
-        command: preset.command,
-        args: preset.args,
-        enabled: true,
-      });
+      const info = await saveTrusted(presetConfig);
       if (!info.connected) {
         pushToast({
           kind: "error",
@@ -301,6 +380,7 @@ export function ConnectorSettings() {
       setFormError("请先填写名称和启动命令。");
       return;
     }
+    if (!(await confirmConnectorStart(config))) return;
     setTesting(true);
     setTestError(null);
     setTestTools(null);
@@ -324,10 +404,11 @@ export function ConnectorSettings() {
       setFormError("请填写启动命令。");
       return;
     }
+    if (!(await confirmConnectorStart(config))) return;
     setSaving(true);
     setFormError(null);
     try {
-      const info = await api.connectorSave(config);
+      const info = await saveTrusted(config);
       if (!info.connected) {
         pushToast({
           kind: "error",
@@ -351,8 +432,14 @@ export function ConnectorSettings() {
   };
 
   const toggle = async (info: ConnectorInfo, enabled: boolean) => {
+    if (enabled && !isTrusted(info) && !(await confirmConnectorStart(info.config))) {
+      return;
+    }
     setBusyId(info.config.id);
     try {
+      if (enabled && !isTrusted(info)) {
+        await api.connectorSetTrusted(info.config.id, true);
+      }
       await api.connectorSetEnabled(info.config.id, enabled);
       await refreshConnectors();
     } catch (err) {
@@ -363,8 +450,12 @@ export function ConnectorSettings() {
   };
 
   const connect = async (info: ConnectorInfo) => {
+    if (!isTrusted(info) && !(await confirmConnectorStart(info.config))) return;
     setBusyId(info.config.id);
     try {
+      if (!isTrusted(info)) {
+        await api.connectorSetTrusted(info.config.id, true);
+      }
       const result = await api.connectorSetEnabled(info.config.id, true);
       if (!result.connected) {
         pushToast({
@@ -381,7 +472,27 @@ export function ConnectorSettings() {
     }
   };
 
+  const revokeTrust = async (info: ConnectorInfo) => {
+    const ok = await confirmDialog({
+      title: `撤销「${info.config.name}」的启动信任？`,
+      body: "连接器进程会立即停止；下次启动或连接前需要重新确认启动命令。已保存的聊天记录和配置不受影响。",
+      confirmLabel: "撤销信任",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusyId(info.config.id);
+    try {
+      await api.connectorSetTrusted(info.config.id, false);
+      await refreshConnectors();
+    } catch (err) {
+      pushToast({ kind: "error", title: "操作失败", detail: errorMessage(err) });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const testExisting = async (info: ConnectorInfo) => {
+    if (!isTrusted(info) && !(await confirmConnectorStart(info.config))) return;
     setBusyId(info.config.id);
     try {
       const tools = await api.connectorTest(info.config);
@@ -672,12 +783,24 @@ export function ConnectorSettings() {
                         : info.connected
                           ? `已连接 · ${info.tools.length} 个工具`
                           : info.config.enabled
-                            ? "未连接"
+                            ? isTrusted(info)
+                              ? "未连接"
+                              : "未信任"
                             : "已停用"}
+                    </span>
+                    <span
+                      className={clsx(
+                        "rounded border px-1 py-px text-[9.5px]",
+                        isTrusted(info)
+                          ? "border-line bg-sidebar text-muted"
+                          : "border-[#e0a53a]/35 bg-[#e0a53a]/10 text-[#a97616] dark:text-[#e0b35a]",
+                      )}
+                    >
+                      {isTrusted(info) ? "已信任" : "未信任"}
                     </span>
                   </div>
                   <p className="mt-1 truncate font-mono text-[11px] text-faint">
-                    {[info.config.command, ...info.config.args].join(" ")}
+                    {commandPreview(info.config)}
                   </p>
                   {info.error && !info.connected && (
                     <p className="mt-1 flex items-start gap-1 text-[11px] leading-4 text-danger">
@@ -716,19 +839,29 @@ export function ConnectorSettings() {
                       variant="ghost"
                       loading={busy}
                       icon={<RefreshCw size={12} />}
-                      onClick={() => connect(info)}
+                      onClick={() => void connect(info)}
                     >
-                      连接
+                      {isTrusted(info) ? "连接" : "确认并启动"}
                     </Button>
                   )}
                   <IconButton
                     label="测试连接"
                     size="sm"
                     disabled={busy}
-                    onClick={() => testExisting(info)}
+                    onClick={() => void testExisting(info)}
                   >
                     <Wrench size={13} />
                   </IconButton>
+                  {isTrusted(info) && (
+                    <IconButton
+                      label="撤销启动信任"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void revokeTrust(info)}
+                    >
+                      <ShieldOff size={13} />
+                    </IconButton>
+                  )}
                   <IconButton label="编辑" size="sm" onClick={() => openEdit(info)}>
                     <Pencil size={13} />
                   </IconButton>
@@ -750,7 +883,7 @@ export function ConnectorSettings() {
 
       <p className="mt-4 flex items-start gap-1.5 text-[11.5px] leading-5 text-faint">
         <ShieldCheck size={13} className="mt-[3px] shrink-0" />
-        连接器以你的 Windows 用户权限在本机运行。Mind 不经过任何中转服务器；工具参数和返回结果只发送给你选择的模型服务。
+        连接器以你的 Windows 用户权限在本机运行。Mind 不经过任何中转服务器；工具参数和返回结果只发送给你选择的模型服务。启动确认和逐次工具审批不是进程级沙箱，无法阻止插件访问文件或网络。
       </p>
         </>
       )}

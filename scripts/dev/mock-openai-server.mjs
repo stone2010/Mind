@@ -62,6 +62,7 @@ const server = createServer((req, res) => {
       res.writeHead(400).end("bad json");
       return;
     }
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const lastUser = Array.isArray(parsed.messages) ? parsed.messages[parsed.messages.length - 1] : null;
     const tools = Array.isArray(parsed.tools) ? parsed.tools.map((t) => t.type) : [];
     const assistants = Array.isArray(parsed.messages)
@@ -98,6 +99,47 @@ const server = createServer((req, res) => {
       return;
     }
 
+    const testText = String(lastMessage?.content || "");
+    if (parsed.stream && testText.includes("FAIL_TEST")) {
+      res.writeHead(500, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { message: "mock upstream failure" } }));
+      return;
+    }
+    if (parsed.stream && testText.includes("ABORT_TEST")) {
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      sse(res, {
+        choices: [{ index: 0, delta: { role: "assistant", content: "部分内容" }, finish_reason: null }],
+      });
+      await wait(250);
+      res.destroy();
+      return;
+    }
+    if (parsed.stream && testText.includes("SLOW_TEST")) {
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      sse(res, { choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] });
+      for (let index = 0; index < 30; index += 1) {
+        await wait(300);
+        sse(res, {
+          choices: [{ index: 0, delta: { content: `片段${index} ` }, finish_reason: null }],
+        });
+      }
+      sse(res, {
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        usage: { prompt_tokens: 10, completion_tokens: 30, total_tokens: 40 },
+      });
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+
     const systemText = Array.isArray(parsed.messages)
       ? parsed.messages.find((m) => m.role === "system")?.content || ""
       : "";
@@ -106,6 +148,17 @@ const server = createServer((req, res) => {
     if (isCompression) console.log("[mock] context compression call");
 
     if (!parsed.stream) {
+      if (
+        isMemoryExtraction &&
+        systemText.includes("MEMORY_FAIL_ONCE") &&
+        !globalThis.__mindMemoryFailed
+      ) {
+        globalThis.__mindMemoryFailed = true;
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "mock memory extraction failure" } }));
+        return;
+      }
+      if (isMemoryExtraction) await wait(2500);
       const content = isMemoryExtraction
         ? JSON.stringify({
             memories: [
@@ -156,7 +209,6 @@ const server = createServer((req, res) => {
       "cache-control": "no-cache",
       connection: "keep-alive",
     });
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     sse(res, { choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] });
 
     const toolCall = {
@@ -182,7 +234,11 @@ const server = createServer((req, res) => {
       const githubTool = functionTools.find(
         (t) => String(t.function?.name) === githubName,
       );
+      const crashTool = functionTools.find(
+        (t) => String(t.function?.name).endsWith("__crash"),
+      );
       const preferred =
+        (userText.includes("crash") && crashTool) ||
         functionTools.find((t) => String(t.function?.name).endsWith("__echo")) ||
         githubTool ||
         functionTools[0];

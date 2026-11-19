@@ -48,6 +48,13 @@ pub struct Message {
     pub created_at: i64,
 }
 
+/// Legacy connector entries did not store a trust flag. They were already
+/// started by earlier releases, so treat a missing field as trusted once and
+/// let the updated UI write an explicit value on the next save.
+fn default_trusted() -> bool {
+    true
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectorConfig {
@@ -58,6 +65,8 @@ pub struct ConnectorConfig {
     pub args: Vec<String>,
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default = "default_trusted")]
+    pub trusted: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]

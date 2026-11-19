@@ -16,6 +16,8 @@ use uuid::Uuid;
 
 pub type StreamRegistry = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
 
+const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+
 fn emit(app: &tauri::AppHandle, event: ChatEvent) {
     let _ = app.emit("chat-event", event);
 }
@@ -189,6 +191,9 @@ pub async fn chat_stream(
     request: ChatRequest,
 ) -> Result<(), String> {
     let request_id = request.request_id.clone();
+    if request_id.trim().is_empty() {
+        return Err("请求 ID 为空".into());
+    }
     if request.messages.is_empty() {
         return Err("消息内容为空".into());
     }
@@ -212,7 +217,13 @@ pub async fn chat_stream(
 
     let cancel = Arc::new(AtomicBool::new(false));
     {
-        let mut streams = state.streams.lock().unwrap();
+        let mut streams = state
+            .streams
+            .lock()
+            .map_err(|_| "请求状态异常，无法开始生成。".to_string())?;
+        if streams.contains_key(&request_id) {
+            return Err("重复的请求 ID，已忽略这次发送。".into());
+        }
         streams.insert(request_id.clone(), cancel.clone());
     }
     let registry = state.streams.clone();
@@ -594,6 +605,7 @@ async fn stream_round(
     }
 
     let mut stream = response.bytes_stream();
+    let mut last_data = tokio::time::Instant::now();
     let mut buf: Vec<u8> = Vec::new();
     let mut finish_reason: Option<String> = None;
     let mut saw_done = false;
@@ -616,11 +628,24 @@ async fn stream_round(
         }
         let next = tokio::time::timeout(Duration::from_millis(250), stream.next()).await;
         let chunk = match next {
-            Err(_) => continue,
+            Err(_) => {
+                if last_data.elapsed() >= STREAM_IDLE_TIMEOUT {
+                    return Err(ProviderError::new(
+                        "timeout",
+                        "连接长时间没有响应，请检查网络后重试。",
+                        Some(format!(
+                            "{} 秒未收到模型数据",
+                            STREAM_IDLE_TIMEOUT.as_secs()
+                        )),
+                    ));
+                }
+                continue;
+            }
             Ok(None) => break,
             Ok(Some(Err(e))) => return Err(map_reqwest_error(e)),
             Ok(Some(Ok(c))) => c,
         };
+        last_data = tokio::time::Instant::now();
         buf.extend_from_slice(&chunk);
 
         loop {
@@ -1125,7 +1150,7 @@ async fn run_http(
                 ToolBackend::Mcp {
                     connector_id,
                     tool_name,
-                } => match connector_manager.client(connector_id).await {
+                } => match connector_manager.client_or_restart(connector_id).await {
                     Some(client) => client.call_tool(tool_name, args.clone()).await,
                     None => Err("连接器未连接".into()),
                 },

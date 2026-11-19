@@ -455,15 +455,43 @@ pub async fn memory_auto_extract(
         .rev()
         .find(|m| m.role == "user")
         .and_then(|m| m.id.clone());
-    let conn = state.db.conn.lock().unwrap();
+    let mut conn = state
+        .db
+        .conn
+        .lock()
+        .map_err(|_| "数据库连接状态异常，无法保存记忆".to_string())?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("无法开始记忆写入事务: {e}"))?;
+    // Two conversations can finish extraction at the same time. The prompt
+    // snapshot above may predate another job's commit, so re-check against the
+    // current rows inside this transaction to avoid duplicate inserts.
+    let current_active: Vec<Memory> = {
+        let mut stmt = tx
+            .prepare(&format!(
+                "SELECT {} FROM memories WHERE status = 'active'",
+                crate::commands::MEMORY_COLUMNS
+            ))
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], crate::commands::memory_from_row)
+            .map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
     let mut inserted = Vec::new();
     for candidate in candidates {
+        if current_active
+            .iter()
+            .any(|memory| is_near_duplicate(&memory.content, &candidate.content))
+        {
+            continue;
+        }
         // Same subject means the new statement is the current value of that
         // fact: keep the old row as a superseded version instead of deleting it.
         let conflict = if candidate.subject.is_empty() {
             None
         } else {
-            conn.query_row(
+            tx.query_row(
                 &format!(
                     "SELECT {} FROM memories
                      WHERE status = 'active' AND memory_type = ?1
@@ -481,8 +509,8 @@ pub async fn memory_auto_extract(
             if candidate.confidence + 0.1 < old.confidence {
                 continue;
             }
-            crate::commands::snapshot_memory(&conn, &old, "superseded")?;
-            conn.execute(
+            crate::commands::snapshot_memory(&tx, &old, "superseded")?;
+            tx.execute(
                 "UPDATE memories SET status = 'superseded', valid_until = ?2, updated_at = ?2
                  WHERE id = ?1",
                 params![old.id, now],
@@ -508,9 +536,9 @@ pub async fn memory_auto_extract(
             created_at: now,
             updated_at: now,
         };
-        crate::commands::insert_memory_row(&conn, &memory)?;
+        crate::commands::insert_memory_row(&tx, &memory)?;
         crate::commands::record_memory_source(
-            &conn,
+            &tx,
             &memory.id,
             Some(&conversation_id),
             source_message_id.as_deref(),
@@ -518,6 +546,8 @@ pub async fn memory_auto_extract(
         )?;
         inserted.push(memory);
     }
+    tx.commit()
+        .map_err(|e| format!("提交记忆写入失败，已回滚: {e}"))?;
     Ok(inserted)
 }
 

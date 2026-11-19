@@ -39,7 +39,16 @@ export default function App() {
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
-    listenConnectorApprovals((request) => useApprovalStore.getState().push(request))
+    listenConnectorApprovals((request) => {
+      const streaming = useChatStore.getState().streaming;
+      if (!streaming || streaming.requestId !== request.requestId) {
+        // The reply was stopped or replaced: release the backend immediately
+        // instead of showing a stale approval dialog.
+        void api.connectorApprove(request.approvalId, false).catch(() => {});
+        return;
+      }
+      useApprovalStore.getState().push(request);
+    })
       .then((fn) => {
         if (disposed) fn();
         else unlisten = fn;

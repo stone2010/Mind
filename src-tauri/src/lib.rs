@@ -114,6 +114,7 @@ pub fn run() {
             connectors::connector_save,
             connectors::connector_delete,
             connectors::connector_set_enabled,
+            connectors::connector_set_trusted,
             connectors::connector_test,
             connectors::connectors_connect_all,
             connectors::connector_approve,

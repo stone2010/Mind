@@ -43,6 +43,8 @@ interface ChatStore {
   pendingProjectId: string | null;
   loading: boolean;
   streaming: StreamingState | null;
+  /** 正在准备请求（压缩/建会话/写库），用于阻止并发发送 */
+  starting: boolean;
   stopping: boolean;
   compacting: boolean;
   usageByConversation: Record<string, UsageLogEntry[]>;
@@ -70,10 +72,122 @@ interface ChatStore {
 let contentBuf = "";
 let reasoningBuf = "";
 let flushTimer: number | null = null;
+let stopTimer: number | null = null;
 let lastPersist = 0;
 let listenerReady: Promise<void> | null = null;
-let memoryExtractionRunning = false;
 let memoryErrorNotified = false;
+
+interface MemoryJob {
+  conversationId: string;
+  messages: Message[];
+  providerId: string;
+  modelId: string;
+  attempts: number;
+}
+
+const MEMORY_MAX_CONCURRENT = 2;
+const MEMORY_QUEUE_LIMIT = 8;
+const MEMORY_MAX_ATTEMPTS = 2;
+const memoryPending = new Map<string, MemoryJob>();
+const memoryActive = new Set<string>();
+
+function memoryTurns(messages: Message[]): ChatTurn[] {
+  return messages
+    .filter((m) => (m.role === "user" || m.role === "assistant") && m.content.trim())
+    .slice(-8)
+    .map((m) => ({ id: m.id, role: m.role, content: m.content, images: [] }));
+}
+
+function enqueueMemoryJob(job: MemoryJob) {
+  if (
+    memoryPending.size >= MEMORY_QUEUE_LIMIT &&
+    !memoryPending.has(job.conversationId)
+  ) {
+    // Bounded queue: older pending work is dropped rather than growing forever.
+    const oldest = memoryPending.keys().next().value;
+    if (oldest !== undefined) memoryPending.delete(oldest);
+  }
+  memoryPending.set(job.conversationId, job);
+}
+
+function pumpMemoryQueue() {
+  while (memoryActive.size < MEMORY_MAX_CONCURRENT && memoryPending.size > 0) {
+    let picked: [string, MemoryJob] | null = null;
+    for (const entry of memoryPending) {
+      if (!memoryActive.has(entry[0])) {
+        picked = entry;
+        break;
+      }
+    }
+    if (!picked) break;
+    const [key, job] = picked;
+    memoryPending.delete(key);
+    memoryActive.add(key);
+    void runMemoryJob(job).finally(() => {
+      memoryActive.delete(key);
+      pumpMemoryQueue();
+    });
+  }
+}
+
+async function runMemoryJob(job: MemoryJob) {
+  const settings = useAppStore.getState().settings;
+  // 自动“记住”与是否把记忆注入对话是两个独立开关：即使注入关闭，
+  // 用户开启自动记忆后仍应积累记忆。
+  if (!settings.autoMemory || settings.demoMode) return;
+  try {
+    const added = await api.memoryAutoExtract(
+      job.providerId,
+      job.modelId,
+      job.conversationId,
+      memoryTurns(job.messages),
+    );
+    memoryErrorNotified = false;
+    if (added.length > 0) {
+      await useAppStore.getState().refreshMemories();
+      pushToast({
+        kind: "success",
+        title: `已记住 ${added.length} 条信息`,
+        action: {
+          label: "查看记忆",
+          onClick: () =>
+            useAppStore.getState().setView({ name: "settings", section: "memory" }),
+        },
+      });
+    }
+  } catch (err) {
+    const latest = useAppStore.getState().settings;
+    const canRetry =
+      job.attempts + 1 < MEMORY_MAX_ATTEMPTS &&
+      latest.autoMemory &&
+      !latest.demoMode;
+    if (canRetry) {
+      window.setTimeout(() => {
+        const key = job.conversationId;
+        if (!memoryActive.has(key) && !memoryPending.has(key)) {
+          enqueueMemoryJob({ ...job, attempts: job.attempts + 1 });
+          pumpMemoryQueue();
+        }
+      }, 3000);
+      return;
+    }
+    // Surface the first final failure per session: silent failures made the
+    // feature look unimplemented even when the key or model was wrong.
+    if (!memoryErrorNotified) {
+      memoryErrorNotified = true;
+      pushToast({
+        kind: "error",
+        title: "自动记忆提取失败",
+        detail: errorMessage(err),
+        action: {
+          label: "查看记忆",
+          onClick: () =>
+            useAppStore.getState().setView({ name: "settings", section: "memory" }),
+        },
+      });
+    }
+  }
+}
 
 function scheduleMemoryExtraction(
   conversationId: string,
@@ -81,59 +195,20 @@ function scheduleMemoryExtraction(
   providerId: string,
   modelId: string,
 ) {
-  if (memoryExtractionRunning) return;
-  const turns: ChatTurn[] = messages
-    .filter((m) => (m.role === "user" || m.role === "assistant") && m.content.trim())
-    .slice(-8)
-    .map((m) => ({ id: m.id, role: m.role, content: m.content, images: [] }));
+  const turns = memoryTurns(messages);
   if (!turns.some((t) => t.role === "user")) return;
-
-  window.setTimeout(async () => {
-    const settings = useAppStore.getState().settings;
-    // 自动“记住”与是否把记忆注入对话是两个独立开关：即使注入关闭，
-    // 用户开启自动记忆后仍应积累记忆。
-    if (memoryExtractionRunning || !settings.autoMemory || settings.demoMode) return;
-    memoryExtractionRunning = true;
-    try {
-      const added = await api.memoryAutoExtract(
-        providerId,
-        modelId,
-        conversationId,
-        turns,
-      );
-      memoryErrorNotified = false;
-      if (added.length > 0) {
-        await useAppStore.getState().refreshMemories();
-        pushToast({
-          kind: "success",
-          title: `已记住 ${added.length} 条信息`,
-          action: {
-            label: "查看记忆",
-            onClick: () =>
-              useAppStore.getState().setView({ name: "settings", section: "memory" }),
-          },
-        });
-      }
-    } catch (err) {
-      // Surface the first failure per session: silent failures made the
-      // feature look unimplemented even when the key or model was wrong.
-      if (!memoryErrorNotified) {
-        memoryErrorNotified = true;
-        pushToast({
-          kind: "error",
-          title: "自动记忆提取失败",
-          detail: errorMessage(err),
-          action: {
-            label: "查看记忆",
-            onClick: () =>
-              useAppStore.getState().setView({ name: "settings", section: "memory" }),
-          },
-        });
-      }
-    } finally {
-      memoryExtractionRunning = false;
-    }
-  }, 1200);
+  const job: MemoryJob = {
+    conversationId,
+    messages,
+    providerId,
+    modelId,
+    attempts: 0,
+  };
+  // A newer completion in the same conversation replaces queued work. If an
+  // extraction is already running, it is picked up as soon as that one ends.
+  enqueueMemoryJob(job);
+  if (memoryActive.has(conversationId)) return;
+  window.setTimeout(pumpMemoryQueue, 1200);
 }
 
 function upsertConnectorCall(list: ConnectorCall[], call: ConnectorCall): ConnectorCall[] {
@@ -386,6 +461,13 @@ function pickMemoriesFor(
   ).map((m) => m.content);
 }
 
+function clearStopTimer() {
+  if (stopTimer != null) {
+    window.clearTimeout(stopTimer);
+    stopTimer = null;
+  }
+}
+
 function scheduleFlush() {
   flushTimer = window.setTimeout(() => {
     flushTimer = null;
@@ -444,6 +526,7 @@ function finalize(status: MessageStatus, error?: ProviderError) {
   const st = useChatStore.getState();
   const streaming = st.streaming;
   if (!streaming) return;
+  clearStopTimer();
 
   if (flushTimer != null) {
     window.clearTimeout(flushTimer);
@@ -554,6 +637,16 @@ function finalize(status: MessageStatus, error?: ProviderError) {
 function handleEvent(event: ChatEvent) {
   const st = useChatStore.getState();
   if (!st.streaming || st.streaming.requestId !== event.requestId) return;
+  // After the user presses stop, ignore remaining deltas for this request.
+  // Usage is still recorded, and done/error must be allowed to finalize.
+  if (
+    st.stopping &&
+    event.kind !== "done" &&
+    event.kind !== "error" &&
+    event.kind !== "usage"
+  ) {
+    return;
+  }
 
   switch (event.kind) {
     case "content":
@@ -852,6 +945,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   pendingProjectId: null,
   loading: false,
   streaming: null,
+  starting: false,
   stopping: false,
   compacting: false,
   usageByConversation: {},
@@ -912,85 +1006,90 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   send: async (text, attachments, fromAskBlock = false) => {
     const state = get();
-    if (state.streaming || state.compacting) return;
+    if (state.streaming || state.compacting || state.starting) return;
     const app = useAppStore.getState();
     const content = text.trim();
     if (!content && attachments.length === 0) return;
 
-    let convId = state.activeId;
-    if (!convId) {
-      try {
-        const conv = await api.createConversation(
-          deriveTitle(content || attachments[0]?.name || "新对话"),
-          app.settings.modelId,
-          state.pendingProjectId,
+    set({ starting: true });
+    try {
+      let convId = state.activeId;
+      if (!convId) {
+        try {
+          const conv = await api.createConversation(
+            deriveTitle(content || attachments[0]?.name || "新对话"),
+            app.settings.modelId,
+            state.pendingProjectId,
+          );
+          set((s) => ({
+            conversations: sortConversations([conv, ...s.conversations]),
+            activeId: conv.id,
+            pendingProjectId: null,
+          }));
+          convId = conv.id;
+          if (conv.projectId) void useAppStore.getState().refreshProjects();
+        } catch (err) {
+          pushToast({ kind: "error", title: "无法创建对话", detail: errorMessage(err) });
+          return;
+        }
+      }
+
+      // Only mark the pending ask-block as answered when this send actually
+      // came from the ask block UI. A free-form reply typed in the composer
+      // (the user "skipping" clarification) must NOT be treated as answered,
+      // otherwise the questions re-open on the next turn.
+      if (fromAskBlock) {
+        const pendingList = state.messages[convId] ?? [];
+        const pendingAsk = [...pendingList].reverse().find(
+          (m) => m.role === "assistant" && hasPendingQuestion(m.content),
         );
-        set((s) => ({
-          conversations: sortConversations([conv, ...s.conversations]),
-          activeId: conv.id,
-          pendingProjectId: null,
-        }));
-        convId = conv.id;
-        if (conv.projectId) void useAppStore.getState().refreshProjects();
+        if (pendingAsk && !state.answeredQuestions[pendingAsk.id]) {
+          set((s) => ({
+            answeredQuestions: { ...s.answeredQuestions, [pendingAsk.id]: true },
+          }));
+        }
+      }
+
+      const userMessage: Message = {
+        id: uuid(),
+        conversationId: convId,
+        role: "user",
+        content,
+        reasoning: null,
+        attachments: attachments.length ? JSON.stringify(attachments) : null,
+        status: "complete",
+        feedback: null,
+        modelId: app.settings.demoMode
+          ? `demo:${app.settings.modelId}`
+          : app.settings.modelId,
+        sources: null,
+        serverToolCalls: null,
+        connectorCalls: null,
+        createdAt: Date.now(),
+      };
+
+      try {
+        await api.insertMessage(userMessage);
       } catch (err) {
-        pushToast({ kind: "error", title: "无法创建对话", detail: errorMessage(err) });
+        pushToast({ kind: "error", title: "消息保存失败", detail: errorMessage(err) });
         return;
       }
-    }
 
-    // Only mark the pending ask-block as answered when this send actually
-    // came from the ask block UI. A free-form reply typed in the composer
-    // (the user "skipping" clarification) must NOT be treated as answered,
-    // otherwise the questions re-open on the next turn.
-    if (fromAskBlock) {
-      const pendingList = state.messages[convId] ?? [];
-      const pendingAsk = [...pendingList].reverse().find(
-        (m) => m.role === "assistant" && hasPendingQuestion(m.content),
-      );
-      if (pendingAsk && !state.answeredQuestions[pendingAsk.id]) {
-        set((s) => ({
-          answeredQuestions: { ...s.answeredQuestions, [pendingAsk.id]: true },
-        }));
-      }
-    }
-
-    const userMessage: Message = {
-      id: uuid(),
-      conversationId: convId,
-      role: "user",
-      content,
-      reasoning: null,
-      attachments: attachments.length ? JSON.stringify(attachments) : null,
-      status: "complete",
-      feedback: null,
-      modelId: app.settings.demoMode
-        ? `demo:${app.settings.modelId}`
-        : app.settings.modelId,
-      sources: null,
-      serverToolCalls: null,
-      connectorCalls: null,
-      createdAt: Date.now(),
-    };
-
-    try {
-      await api.insertMessage(userMessage);
-    } catch (err) {
-      pushToast({ kind: "error", title: "消息保存失败", detail: errorMessage(err) });
-      return;
-    }
-
-    const list = get().messages[convId] ?? [];
-    const nextList = [...list, userMessage];
-    set((s) => ({
-      messages: { ...s.messages, [convId as string]: nextList },
-      conversations: sortConversations(
-        s.conversations.map((c) =>
-          c.id === convId ? { ...c, updatedAt: Date.now() } : c,
+      const list = get().messages[convId] ?? [];
+      const nextList = [...list, userMessage];
+      set((s) => ({
+        messages: { ...s.messages, [convId as string]: nextList },
+        conversations: sortConversations(
+          s.conversations.map((c) =>
+            c.id === convId ? { ...c, updatedAt: Date.now() } : c,
+          ),
         ),
-      ),
-    }));
+      }));
 
-    await startAssistant(convId, nextList);
+      await startAssistant(convId, nextList);
+    } finally {
+      set({ starting: false });
+    }
   },
 
   markQuestionAnswered: (messageId) => {
@@ -1002,37 +1101,52 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   stop: async () => {
     const { streaming } = get();
     if (!streaming) return;
+    const requestId = streaming.requestId;
     set({ stopping: true });
+    clearStopTimer();
+    // Backstop for a backend that never answers the cancel command.
+    stopTimer = window.setTimeout(() => {
+      const current = get();
+      if (current.streaming?.requestId === requestId && current.stopping) {
+        finalize("stopped");
+      }
+    }, 5000);
     try {
-      await api.chatCancel(streaming.requestId);
+      await api.chatCancel(requestId);
     } catch {
+      clearStopTimer();
       set({ stopping: false });
     }
   },
 
   regenerate: async (messageId) => {
     const st = get();
-    if (st.streaming) return;
+    if (st.streaming || st.starting || st.compacting) return;
     const convId = st.activeId;
     if (!convId) return;
     const list = st.messages[convId] ?? [];
     const idx = list.findIndex((m) => m.id === messageId);
     if (idx < 0) return;
     const history = list.slice(0, idx);
+    set({ starting: true });
     try {
-      await api.deleteMessagesFrom(convId, messageId);
-    } catch (err) {
-      pushToast({ kind: "error", title: "操作失败", detail: errorMessage(err) });
-      return;
+      try {
+        await api.deleteMessagesFrom(convId, messageId);
+      } catch (err) {
+        pushToast({ kind: "error", title: "操作失败", detail: errorMessage(err) });
+        return;
+      }
+      set((s) => ({ messages: { ...s.messages, [convId]: history } }));
+      await resetSummaryAfterCut(convId, idx);
+      await startAssistant(convId, history);
+    } finally {
+      set({ starting: false });
     }
-    set((s) => ({ messages: { ...s.messages, [convId]: history } }));
-    await resetSummaryAfterCut(convId, idx);
-    await startAssistant(convId, history);
   },
 
   editAndResend: async (messageId, content) => {
     const st = get();
-    if (st.streaming) return;
+    if (st.streaming || st.starting || st.compacting) return;
     const convId = st.activeId;
     if (!convId) return;
     const list = st.messages[convId] ?? [];
@@ -1045,17 +1159,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const history = updated.slice(0, idx + 1);
     const nextMessage = updated[idx + 1];
 
+    set({ starting: true });
     try {
-      await api.updateMessageContent(messageId, trimmed);
-      if (nextMessage) await api.deleteMessagesFrom(convId, nextMessage.id);
-    } catch (err) {
-      pushToast({ kind: "error", title: "操作失败", detail: errorMessage(err) });
-      return;
-    }
+      try {
+        await api.updateMessageContent(messageId, trimmed);
+        if (nextMessage) await api.deleteMessagesFrom(convId, nextMessage.id);
+      } catch (err) {
+        pushToast({ kind: "error", title: "操作失败", detail: errorMessage(err) });
+        return;
+      }
 
-    set((s) => ({ messages: { ...s.messages, [convId]: history } }));
-    await resetSummaryAfterCut(convId, idx + 1);
-    await startAssistant(convId, history);
+      set((s) => ({ messages: { ...s.messages, [convId]: history } }));
+      await resetSummaryAfterCut(convId, idx + 1);
+      await startAssistant(convId, history);
+    } finally {
+      set({ starting: false });
+    }
   },
 
   setFeedback: async (messageId, value) => {

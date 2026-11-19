@@ -45,6 +45,8 @@ export interface ConnectorConfig {
   command: string;
   args: string[];
   enabled: boolean;
+  /** 首次启动前确认过启动命令；旧版配置没有该字段，视为已信任 */
+  trusted?: boolean;
 }
 
 export interface ConnectorToolInfo {

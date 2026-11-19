@@ -25,6 +25,11 @@ const TOOLS = [
       required: ["a", "b"],
     },
   },
+  {
+    name: "crash",
+    description: "测试用：立即退出进程，验证崩溃恢复。",
+    inputSchema: { type: "object", properties: {} },
+  },
 ];
 
 function send(payload) {
@@ -83,6 +88,9 @@ function handle(message) {
           },
         });
         return;
+      }
+      if (name === "crash") {
+        process.exit(1);
       }
       send({
         jsonrpc: "2.0",

@@ -185,6 +185,8 @@ export const api = {
   connectorDelete: (id: string) => invoke<void>("connector_delete", { id }),
   connectorSetEnabled: (id: string, enabled: boolean) =>
     invoke<ConnectorInfo>("connector_set_enabled", { id, enabled }),
+  connectorSetTrusted: (id: string, trusted: boolean) =>
+    invoke<ConnectorInfo>("connector_set_trusted", { id, trusted }),
   connectorTest: (config: ConnectorConfig) =>
     invoke<ConnectorToolInfo[]>("connector_test", { config }),
   connectorsConnectAll: () => invoke<void>("connectors_connect_all"),
