@@ -1,10 +1,10 @@
 # Mind 隐私说明
 
-版本：1.0  
-更新日期：2026-11-17  
+版本：1.1  
+更新日期：2026-11-21  
 生效日期：2026-11-17
 
-Mind 是一个本地优先的 Windows 桌面客户端。本说明解释 Mind 处理哪些数据、数据去哪里，以及你可以如何控制和删除数据。
+Mind 是一个本地优先的 Windows / Android 客户端。本说明解释 Mind 处理哪些数据、数据去哪里，以及你可以如何控制和删除数据。
 
 ## 1. 我们是谁
 
@@ -22,14 +22,17 @@ Mind 会在本机保存：
 
 默认位置：
 
-- 数据库：`%APPDATA%\com.mind.desktop\mind.db`
-- WebView 缓存：`%LOCALAPPDATA%\com.mind.desktop\EBWebView`
-- 凭据：Windows Credential Manager
+- Windows 数据库：`%APPDATA%\com.mind.desktop\mind.db`
+- Android 数据库：应用私有数据目录（`/data/data/com.mind.desktop/`，其他应用无法读取）
+- Windows WebView 缓存：`%LOCALAPPDATA%\com.mind.desktop\EBWebView`
+- Windows 凭据：Windows Credential Manager
+- Android 凭据：Android Keystore 加密后的密文，保存在应用私有 SharedPreferences 中
 
 ## 3. 密钥如何处理
 
 - 模型 API Key 和 GitHub Token 由你提供；
-- Mind 尝试将它们保存到 Windows Credential Manager，而不是 SQLite、设置文件或日志；
+- Windows：Mind 尝试将它们保存到 Windows Credential Manager，而不是 SQLite、设置文件或日志；
+- Android：Mind 使用 Android Keystore 中不可导出的 AES-256-GCM 密钥加密后，把密文保存在应用私有目录；密钥本身不离开系统密钥库，明文只在应用运行内存中出现；备份文件不包含这些密钥；
 - Mind 不会把密钥上传到开发者自己的服务器；
 - 当你发起请求时，密钥会由 Mind 直接用于连接你选择的模型服务或 GitHub。
 
@@ -67,11 +70,11 @@ Mind 当前不包含开发者运营的分析、遥测、广告或用户画像服
 - 你可以关闭用量记录、清除用量记录、删除对话或删除本地数据目录；
 - 当前没有云同步；把备份放入 OneDrive、坚果云等同步盘属于你自行选择的第三方处理方式。
 
-卸载 Mind 不一定会自动删除数据库和 WebView 缓存。如需彻底删除，请关闭应用后删除上面的本地目录，并从 Windows Credential Manager 删除 `provider:<id>` 和 `github:main` 条目。
+卸载 Mind 不一定会自动删除数据库和 WebView 缓存。如需彻底删除，请关闭应用后删除上面的本地目录，并删除 Windows Credential Manager 中的 `provider:<id>` 和 `github:main` 条目；Android 卸载应用会同时删除应用私有目录（含加密凭据）。
 
 ## 9. 安全
 
-Mind 使用本机 SQLite、Windows 凭据管理器和传输层加密连接第三方服务。但没有任何系统能保证绝对安全。你应保护设备登录账户、及时更新系统和浏览器运行时，并只安装可信插件。
+Mind 使用本机 SQLite、系统凭据管理器和传输层加密连接第三方服务。Android 上，API Key 与 GitHub Token 使用 Android Keystore 支持的 AES-256-GCM 加密存储，且应用关闭了系统自动备份，避免凭据或聊天数据被同步到云端。但没有任何系统能保证绝对安全。你应保护设备登录账户、及时更新系统和浏览器运行时，并只安装可信插件。
 
 ## 10. 儿童
 

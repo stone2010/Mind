@@ -1,5 +1,7 @@
 # Mind Android 预览版（基于 v0.1.1）
 
+> ⚠️ 此预览版已被 [Mind Android v0.1.2](release-notes-v0.1.2-android.md)（正式签名、Keystore 凭据持久化、系统返回键、品牌图标）取代，请优先下载新版本。
+
 这是 Mind 的 Android 预览构建，用于验证移动端聊天、历史记录和 GitHub 连接。**不是正式版**，请勿用于重要数据或生产用途。
 
 ## 下载

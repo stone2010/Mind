@@ -18,3 +18,7 @@ keystore.properties
 
 /.tauri
 /tauri.settings.gradle
+/tauri.build.gradle.kts
+/.kotlin
+/app/tauri.properties
+/app/src/main/assets/

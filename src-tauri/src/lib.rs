@@ -22,9 +22,16 @@ pub struct AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+
+    // Android stores API Keys / GitHub tokens in an Android Keystore backed
+    // vault; the Kotlin plugin is registered here before the app starts.
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(credentials::android_plugin());
+
+    builder
         .setup(|app| {
             let data_dir = app
                 .path()

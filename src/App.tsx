@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { exit, onBackButtonPress } from "@tauri-apps/api/app";
 import { api, listenConnectorApprovals } from "./lib/bridge";
+import { isMobilePlatform } from "./lib/platform";
 import { useIsMobileLayout } from "./lib/useIsMobile";
 import { systemThemeListener, useAppStore } from "./store/app";
 import { useApprovalStore } from "./store/approvals";
@@ -30,6 +32,38 @@ export default function App() {
   useEffect(() => {
     setDrawerOpen(false);
   }, [view, activeId]);
+
+  // Android system back button: close the drawer/search first, then leave
+  // settings/projects, and only exit the app from the chat root.
+  useEffect(() => {
+    if (!isMobilePlatform()) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    onBackButtonPress(() => {
+      if (drawerOpen) {
+        setDrawerOpen(false);
+      } else if (searchOpen) {
+        setSearchOpen(false);
+      } else if (ready && view.name === "settings") {
+        setView({ name: "chat" });
+      } else if (ready && view.name === "projects" && view.projectId) {
+        setView({ name: "projects", projectId: null });
+      } else if (ready && !needsOnboarding) {
+        void exit(0);
+      }
+    })
+      .then((listener) => {
+        if (disposed) void listener.unregister();
+        else unlisten = () => void listener.unregister();
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [ready, needsOnboarding, drawerOpen, searchOpen, view, setView]);
 
   useEffect(() => {
     void useAppStore.getState().init();

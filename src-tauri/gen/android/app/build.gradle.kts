@@ -14,6 +14,18 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Release signing is supplied through environment variables so the keystore
+// and its password never have to live in the repository. Without them the
+// release build still produces an unsigned APK for verification.
+val releaseStoreFile = System.getenv("MIND_ANDROID_KEYSTORE")?.takeIf { it.isNotBlank() }
+val releaseStorePassword = System.getenv("MIND_ANDROID_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("MIND_ANDROID_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("MIND_ANDROID_KEY_PASSWORD")
+val hasReleaseSigning = releaseStoreFile != null &&
+    releaseStorePassword != null &&
+    releaseKeyAlias != null &&
+    releaseKeyPassword != null
+
 android {
     compileSdk = 36
     namespace = "com.mind.desktop"
@@ -24,6 +36,16 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -39,6 +61,9 @@ android {
             }
         }
         getByName("release") {
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                enable = true
             }
