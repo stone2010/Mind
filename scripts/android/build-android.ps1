@@ -51,7 +51,7 @@ if (-not (Test-Path (Join-Path $AndroidHome "platforms\android-36\android.jar"))
 $ndkRoot = if ($NdkHome) { $NdkHome } else { Join-Path $AndroidHome "ndk\27.0.12077973" }
 if (-not (Test-Path (Join-Path $ndkRoot "source.properties"))) { Fail "Android NDK 27.0.12077973 not found at $ndkRoot" }
 
-$abi = @{
+$abiInfo = @{
   arm64  = @{ Rust = "aarch64-linux-android";      Dir = "arm64-v8a";   Flavor = "Arm64" }
   armv7  = @{ Rust = "armv7-linux-androideabi";    Dir = "armeabi-v7a"; Flavor = "Arm" }
   x86    = @{ Rust = "i686-linux-android";         Dir = "x86";         Flavor = "X86" }
@@ -75,7 +75,7 @@ Write-Host "JDK:     $JavaHome"
 Write-Host "SDK:     $AndroidHome"
 Write-Host "NDK:     $ndkRoot"
 Write-Host "Mode:    $Mode"
-Write-Host "ABI:     $Abi ($($abi.Dir))"
+Write-Host "ABI:     $Abi ($($abiInfo.Dir))"
 
 # --------------------------------------------------- stale tauri plugin state
 # Windows leaves Cargo registry plugin android/.tauri folders behind; a later
@@ -127,23 +127,23 @@ $tauriExit = $LASTEXITCODE
 if ($tauriExit -ne 0) {
   Write-Host "`nTauri CLI build failed (exit $tauriExit); trying the Gradle fallback." -ForegroundColor Yellow
 
-  $nativeLib = Join-Path $repoRoot "src-tauri\target\$($abi.Rust)\$Mode\libmind_lib.so"
+  $nativeLib = Join-Path $repoRoot "src-tauri\target\$($abiInfo.Rust)\$Mode\libmind_lib.so"
   if (-not (Test-Path $nativeLib)) {
     Fail "Rust library not found at $nativeLib, cannot fall back to Gradle. Fix the Rust build first."
   }
 
-  $jniDir = Join-Path $androidDir "app\src\main\jniLibs\$($abi.Dir)"
+  $jniDir = Join-Path $androidDir "app\src\main\jniLibs\$($abiInfo.Dir)"
   New-Item -ItemType Directory -Force -Path $jniDir | Out-Null
   Copy-Item -Force $nativeLib (Join-Path $jniDir "libmind_lib.so")
-  Write-Host "Copied libmind_lib.so into jniLibs\$($abi.Dir)"
+  Write-Host "Copied libmind_lib.so into jniLibs\$($abiInfo.Dir)"
 
   # The mobile runtime reads app/src/main/assets/tauri.conf.json.
   $assetsDir = Join-Path $androidDir "app\src\main\assets"
   New-Item -ItemType Directory -Force -Path $assetsDir | Out-Null
   Copy-Item -Force (Join-Path $repoRoot "src-tauri\tauri.conf.json") (Join-Path $assetsDir "tauri.conf.json")
 
-  $gradleTask = "assemble$($abi.Flavor)$modeName"
-  $skipRust = @("-x", "rustBuild$($abi.Flavor)$modeName", "-x", "rustBuildUniversal$modeName")
+  $gradleTask = "assemble$($abiInfo.Flavor)$modeName"
+  $skipRust = @("-x", "rustBuild$($abiInfo.Flavor)$modeName", "-x", "rustBuildUniversal$modeName")
   Push-Location $androidDir
   try {
     Write-Host "`n==> gradlew $gradleTask $($skipRust -join ' ')" -ForegroundColor Cyan

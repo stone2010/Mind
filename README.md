@@ -62,10 +62,10 @@ Mind 是一个面向普通用户的本地优先 AI 客户端：安装后填入 D
 
 从 [Releases](https://github.com/stone2010/Mind/releases/tag/v0.1.1) 下载 `Mind_0.1.1_x64-setup.exe`，运行安装向导即可。安装包未签名，Windows SmartScreen 可能提示未知发布者；请确认下载来源。
 
-也可以从源码构建，安装包位于：
+从 `0.1.2` 源码构建 Windows 安装包时，产物位于：
 
 ```text
-src-tauri/target/release/bundle/nsis/Mind_0.1.1_x64-setup.exe
+src-tauri/target/release/bundle/nsis/Mind_0.1.2_x64-setup.exe
 ```
 
 首次打开：
