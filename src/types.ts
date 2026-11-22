@@ -380,6 +380,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   chatMode: false,
   chatModeAck: false,
   longTermMemory: true,
-  memoryRecall: "recent",
+  memoryRecall: "recall",
   memoryVersion: 2,
 };

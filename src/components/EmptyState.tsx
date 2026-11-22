@@ -51,9 +51,9 @@ export function EmptyState({ onSuggestion }: { onSuggestion: (text: string) => v
     ?.models.find((m) => m.id === settings.modelId);
 
   return (
-    <div className="flex h-full items-center justify-center px-6 pb-16">
+    <div className="flex h-full items-center justify-center px-5 pb-10 sm:px-6 sm:pb-16">
       <div className="w-full max-w-[600px]">
-        <h1 className="text-[24px] font-semibold tracking-[-0.01em] text-ink">
+        <h1 className="text-[21px] font-semibold tracking-[-0.01em] text-ink sm:text-[24px]">
           有什么可以帮你的？
         </h1>
         <p className="mt-2 flex items-center gap-2 text-[13px] text-muted">

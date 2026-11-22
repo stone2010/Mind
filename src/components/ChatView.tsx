@@ -142,16 +142,16 @@ export function ChatView({
       <div
         className={clsx(
           "flex shrink-0 items-center gap-2",
-          mobile ? "h-12 px-3" : "h-[52px] px-5",
+          mobile ? "h-[52px] px-2.5" : "h-[52px] px-5",
         )}
       >
         {mobile && (
           <button
             onClick={onOpenSidebar}
             aria-label="打开菜单"
-            className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-ink"
+            className="-ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-ink"
           >
-            <Menu size={19} />
+            <Menu size={21} />
           </button>
         )}
         <h1 className="min-w-0 truncate text-[13.5px] font-medium text-ink">

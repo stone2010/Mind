@@ -54,6 +54,10 @@ export default {
           from: { opacity: "0", transform: "scale(0.98)" },
           to: { opacity: "1", transform: "scale(1)" },
         },
+        "slide-in-left": {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(0)" },
+        },
         "dot-pulse": {
           "0%, 80%, 100%": { opacity: "0.25" },
           "40%": { opacity: "1" },
@@ -67,6 +71,7 @@ export default {
         "fade-up": "fade-up 0.2s ease-out",
         "fade-in": "fade-in 0.15s ease-out",
         "scale-in": "scale-in 0.16s ease-out",
+        "slide-in-left": "slide-in-left 0.2s ease-out",
         "dot-pulse": "dot-pulse 1.2s ease-in-out infinite",
         shimmer: "shimmer 2.4s linear infinite",
       },

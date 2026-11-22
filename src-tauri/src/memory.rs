@@ -399,9 +399,18 @@ pub async fn memory_auto_extract(
     };
 
     let prompt = build_prompt(&existing, &messages);
+    // Put the rules in the system message and the conversation payload in a
+    // user message: several OpenAI-compatible providers reject or degrade on
+    // requests that contain only a system message.
     let mut body = json!({
         "model": extraction_model,
-        "messages": [{"role": "system", "content": prompt}],
+        "messages": [
+            {
+                "role": "system",
+                "content": "你是 Mind 的长期记忆提取引擎。请严格按用户消息中的规则与 JSON 格式输出，不要输出任何解释。"
+            },
+            {"role": "user", "content": prompt}
+        ],
         "stream": false,
         "max_tokens": 500,
         "temperature": 0.1

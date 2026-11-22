@@ -71,7 +71,7 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[85] flex items-start justify-center bg-black/30 px-6 pt-[13vh] animate-fade-in"
+      className="fixed inset-0 z-[85] flex items-start justify-center bg-black/30 px-3 pt-[8vh] animate-fade-in sm:px-6 sm:pt-[13vh]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

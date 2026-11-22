@@ -800,6 +800,30 @@ pub(crate) fn snapshot_memory(
     Ok(())
 }
 
+/// Manual saves should behave like automatic extraction: near-identical facts
+/// return the existing row instead of piling up duplicates in the list.
+fn find_similar_active_memory(
+    conn: &rusqlite::Connection,
+    content: &str,
+) -> Result<Option<Memory>, String> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {MEMORY_COLUMNS} FROM memories
+             WHERE status = 'active'
+             ORDER BY updated_at DESC LIMIT 200"
+        ))
+        .map_err(serr)?;
+    let rows = stmt
+        .query_map([], memory_from_row)
+        .map_err(serr)?;
+    for row in rows.flatten() {
+        if crate::memory::similarity(&row.content, content) >= 0.85 {
+            return Ok(Some(row));
+        }
+    }
+    Ok(None)
+}
+
 #[tauri::command]
 pub fn db_list_memories(state: State<AppState>) -> Result<Vec<Memory>, String> {
     let conn = state.db.conn.lock().unwrap();
@@ -823,21 +847,10 @@ pub fn db_create_memory(state: State<AppState>, content: String) -> Result<Memor
         return Err("记忆内容不能为空".into());
     }
     let conn = state.db.conn.lock().unwrap();
-    // "保存到记忆" may be clicked more than once; return the existing row
-    // instead of accumulating exact duplicates.
-    if let Some(existing) = conn
-        .query_row(
-            &format!(
-                "SELECT {MEMORY_COLUMNS} FROM memories
-                 WHERE lower(trim(content)) = lower(?1) AND status = 'active'
-                 ORDER BY updated_at DESC LIMIT 1"
-            ),
-            params![&content],
-            memory_from_row,
-        )
-        .optional()
-        .map_err(serr)?
-    {
+    // "保存到记忆" may be clicked more than once, and users often add a
+    // rephrased version of a fact: return the existing memory instead of
+    // accumulating near duplicates.
+    if let Some(existing) = find_similar_active_memory(&conn, &content)? {
         return Ok(existing);
     }
     let now = now_millis();
@@ -875,19 +888,7 @@ pub fn db_create_memory_typed(
         return Err("记忆内容不能为空".into());
     }
     let conn = state.db.conn.lock().unwrap();
-    if let Some(existing) = conn
-        .query_row(
-            &format!(
-                "SELECT {MEMORY_COLUMNS} FROM memories
-                 WHERE lower(trim(content)) = lower(?1) AND status = 'active'
-                 ORDER BY updated_at DESC LIMIT 1"
-            ),
-            params![&content],
-            memory_from_row,
-        )
-        .optional()
-        .map_err(serr)?
-    {
+    if let Some(existing) = find_similar_active_memory(&conn, &content)? {
         return Ok(existing);
     }
     let now = now_millis();
@@ -1425,8 +1426,7 @@ pub fn db_clear_usage(state: State<AppState>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn app_info(app: tauri::AppHandle) -> Result<AppInfo, String> {
-    use tauri::Manager;
-    let dir = app.path().app_data_dir().map_err(serr)?;
+    let dir = crate::resolve_data_dir(&app)?;
     Ok(AppInfo {
         version: env!("CARGO_PKG_VERSION").into(),
         data_dir: dir.to_string_lossy().into(),
@@ -1445,8 +1445,7 @@ pub fn app_ready(app: tauri::AppHandle) {
 
 #[tauri::command]
 pub fn open_data_dir(app: tauri::AppHandle) -> Result<(), String> {
-    use tauri::Manager;
-    let dir = app.path().app_data_dir().map_err(serr)?;
+    let dir = crate::resolve_data_dir(&app)?;
     tauri_plugin_opener::open_path(dir.to_string_lossy().to_string(), None::<&str>)
         .map_err(serr)
 }

@@ -88,8 +88,12 @@ interface MemoryJob {
 const MEMORY_MAX_CONCURRENT = 2;
 const MEMORY_QUEUE_LIMIT = 8;
 const MEMORY_MAX_ATTEMPTS = 2;
+// Extraction is a paid model call. Only run it when the conversation gained a
+// new user turn since the last attempt, and never more than once per interval.
+const MEMORY_MIN_INTERVAL_MS = 45_000;
 const memoryPending = new Map<string, MemoryJob>();
 const memoryActive = new Set<string>();
+const memoryExtracted = new Map<string, { userCount: number; at: number }>();
 
 function memoryTurns(messages: Message[]): ChatTurn[] {
   return messages
@@ -197,6 +201,12 @@ function scheduleMemoryExtraction(
 ) {
   const turns = memoryTurns(messages);
   if (!turns.some((t) => t.role === "user")) return;
+  const userCount = messages.filter((m) => m.role === "user").length;
+  const previous = memoryExtracted.get(conversationId);
+  const now = Date.now();
+  if (previous && previous.userCount >= userCount) return;
+  if (previous && now - previous.at < MEMORY_MIN_INTERVAL_MS) return;
+  memoryExtracted.set(conversationId, { userCount, at: now });
   const job: MemoryJob = {
     conversationId,
     messages,

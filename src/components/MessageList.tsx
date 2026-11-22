@@ -93,7 +93,7 @@ export function MessageList({
         {messages.length === 0 ? (
           <EmptyState onSuggestion={onSuggestion} />
         ) : (
-          <div className="mx-auto w-full max-w-[780px] px-5 pb-8 pt-5">
+          <div className="mx-auto w-full max-w-[780px] px-4 pb-6 pt-3 sm:px-5 sm:pb-8 sm:pt-5">
             {messages.map((m, i) => (
               <MessageItem
                 key={m.id}

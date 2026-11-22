@@ -7,7 +7,15 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
-    watch: { ignored: ["**/src-tauri/**"] },
+    watch: {
+      ignored: [
+        "**/src-tauri/**",
+        // Editors write atomically through dot-directories; watching those
+        // transient files crashes the dev server with EBUSY on Windows.
+        "**/.*.tmpdir/**",
+        "**/*.tmp",
+      ],
+    },
   },
   build: {
     target: "chrome110",

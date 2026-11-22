@@ -200,7 +200,7 @@ export function Composer({
               ref={modelBtnRef}
               onClick={() => options.length > 1 && setModelOpen(true)}
               className={clsx(
-                "flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] text-muted transition-colors",
+                "flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] text-muted transition-colors",
                 options.length > 1 && "hover:bg-hover hover:text-ink",
               )}
               title={options.length > 1 ? "切换模型" : undefined}
@@ -222,7 +222,7 @@ export function Composer({
                       : "开启深度思考"
                 }
                 className={clsx(
-                  "flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors",
+                  "flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors",
                   settings.thinking
                     ? "bg-accent-soft text-accent"
                     : "text-muted hover:bg-hover hover:text-ink",
@@ -239,7 +239,7 @@ export function Composer({
                 onClick={() => updateSettings({ webSearch: !settings.webSearch })}
                 title="联网搜索（由 DeepSeek 提供，按次计费）"
                 className={clsx(
-                  "flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors",
+                  "flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors",
                   settings.webSearch
                     ? "bg-accent-soft text-accent"
                     : "text-muted hover:bg-hover hover:text-ink",
@@ -259,7 +259,7 @@ export function Composer({
                     : "点击开启聊天娱乐模式（简短口语，省 token）"
                 }
                 className={clsx(
-                  "flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors",
+                  "flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors",
                   settings.chatMode
                     ? "bg-[#7c5cff1f] text-[#7c5cff]"
                     : "text-muted hover:bg-hover hover:text-ink",
@@ -275,7 +275,7 @@ export function Composer({
                 onClick={() => updateSettings({ connectors: !settings.connectors })}
                 title="连接器与 GitHub：调用工具前都会请求你的确认"
                 className={clsx(
-                  "flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors",
+                  "flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors",
                   settings.connectors
                     ? "bg-accent-soft text-accent"
                     : "text-muted hover:bg-hover hover:text-ink",
@@ -305,7 +305,7 @@ export function Composer({
               <button
                 onClick={stop}
                 disabled={stopping}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-line bg-sidebar text-ink transition-colors hover:bg-hover disabled:opacity-50"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-sidebar text-ink transition-colors hover:bg-hover disabled:opacity-50"
                 aria-label="停止生成"
                 title="停止生成"
               >
@@ -315,11 +315,11 @@ export function Composer({
               <button
                 onClick={onSend}
                 disabled={!canSend}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-white transition-colors hover:bg-accent-hover disabled:bg-sidebar disabled:text-faint dark:text-[#0b1530]"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-white transition-colors hover:bg-accent-hover disabled:bg-sidebar disabled:text-faint dark:text-[#0b1530]"
                 aria-label="发送"
                 title="发送 (Enter)"
               >
-                <ArrowUp size={16} strokeWidth={2.2} />
+                <ArrowUp size={17} strokeWidth={2.2} />
               </button>
             )}
           </div>

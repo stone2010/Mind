@@ -70,7 +70,7 @@ export function FloatingMenu({
               item.onClick();
             }}
             className={clsx(
-              "flex w-full items-center gap-2.5 rounded-md px-2.5 py-[7px] text-left text-[13px] transition-colors",
+              "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] transition-colors",
               item.danger
                 ? "text-danger hover:bg-danger-soft"
                 : "text-ink hover:bg-hover",

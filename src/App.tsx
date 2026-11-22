@@ -190,10 +190,10 @@ export default function App() {
             {mobile && drawerOpen && (
               <div className="fixed inset-0 z-50">
                 <div
-                  className="absolute inset-0 bg-black/35"
+                  className="absolute inset-0 bg-black/35 animate-fade-in"
                   onClick={() => setDrawerOpen(false)}
                 />
-                <div className="relative h-full w-[280px] shadow-2xl">
+                <div className="relative h-full w-[82%] max-w-[320px] shadow-2xl animate-slide-in-left">
                   <Sidebar
                     mobile
                     onClose={() => setDrawerOpen(false)}

@@ -20,6 +20,20 @@ pub struct AppState {
     pub approvals: connectors::ApprovalRegistry,
 }
 
+/// Resolves the directory that stores `mind.db`.
+///
+/// `MIND_DATA_DIR` overrides the platform default so tests, portable installs
+/// and sandboxed environments can keep data inside a chosen folder.
+pub fn resolve_data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    if let Some(dir) = std::env::var_os("MIND_DATA_DIR") {
+        return Ok(std::path::PathBuf::from(dir));
+    }
+    use tauri::Manager;
+    app.path()
+        .app_data_dir()
+        .map_err(|e| format!("无法定位应用数据目录: {e}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -33,10 +47,9 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .map_err(|e| format!("无法定位应用数据目录: {e}"))?;
+            // `MIND_DATA_DIR` lets tests and portable installs choose the data
+            // directory explicitly instead of the platform default.
+            let data_dir = resolve_data_dir(app.handle())?;
             std::fs::create_dir_all(&data_dir)?;
             let database = db::Db::open(&data_dir.join("mind.db"))?;
             app.manage(AppState {

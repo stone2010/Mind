@@ -1,5 +1,6 @@
 import { ReceiptText } from "lucide-react";
 import { formatFen, summarizeUsage } from "../lib/pricing";
+import { useIsMobileLayout } from "../lib/useIsMobile";
 import { useAppStore } from "../store/app";
 import { useChatStore } from "../store/chat";
 
@@ -9,8 +10,11 @@ export function ConversationCost({ conversationId }: { conversationId: string | 
   );
   const settings = useAppStore((s) => s.settings);
   const setView = useAppStore((s) => s.setView);
+  const mobile = useIsMobileLayout();
 
-  if (!conversationId || !settings.usageEnabled || !logs?.length) return null;
+  // On phones the header needs the space for the title; costs stay available in
+  // 设置 → 用量与费用.
+  if (mobile || !conversationId || !settings.usageEnabled || !logs?.length) return null;
   const summary = summarizeUsage(logs, settings);
   if (summary.totalTokens <= 0) return null;
 
@@ -23,7 +27,7 @@ export function ConversationCost({ conversationId }: { conversationId: string | 
       <ReceiptText size={11} className="text-accent" />
       本对话
       {summary.hasUnknownModel ? (
-        <span className="text-[#b07a1c] dark:text-[#e0b35a]">部分未配置</span>
+        <span className="text-[#b07a1c] dark:text-[#e0b35a]">价格未配置</span>
       ) : (
         <span className="font-medium text-ink">≈{formatFen(summary.totalCost)}</span>
       )}

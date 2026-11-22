@@ -60,7 +60,7 @@ export function Button({
   const base =
     "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors duration-100 select-none disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft";
   const sizes = {
-    sm: "h-7 px-2.5 text-xs",
+    sm: "h-8 px-2.5 text-[12px]",
     md: "h-9 px-3.5 text-[13px]",
     lg: "h-11 px-5 text-sm",
   };
@@ -103,7 +103,7 @@ export function IconButton({
       aria-label={label}
       className={clsx(
         "inline-flex items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft",
-        size === "sm" ? "h-7 w-7" : "h-8 w-8",
+        size === "sm" ? "h-8 w-8" : "h-9 w-9",
         active && "bg-active text-ink",
         className,
       )}
@@ -379,7 +379,7 @@ export function Popover({
       let top = align === "top" ? rect.top - height - 6 : rect.bottom + 6;
       if (top + height > window.innerHeight - 8) top = window.innerHeight - height - 8;
       top = Math.max(8, top);
-      setStyle({ left, top, width: w });
+      setStyle({ left, top, width: w, maxHeight: "min(70vh, 520px)" });
     };
     place();
     const raf = requestAnimationFrame(place);
@@ -402,7 +402,7 @@ export function Popover({
       ref={ref}
       style={style}
       className={clsx(
-        "fixed z-[70] overflow-hidden rounded-lg border border-line bg-elevated p-1 shadow-pop animate-scale-in",
+        "fixed z-[70] overflow-y-auto overscroll-contain rounded-lg border border-line bg-elevated p-1 shadow-pop animate-scale-in",
         className,
       )}
     >

@@ -1,6 +1,7 @@
 import {
   Archive,
   ArchiveRestore,
+  Brain,
   ChevronDown,
   FolderClosed,
   FolderInput,
@@ -38,6 +39,7 @@ function ConversationRow({
   conv,
   active,
   collapsed,
+  mobile,
   onMenu,
   renaming,
   setRenaming,
@@ -45,6 +47,7 @@ function ConversationRow({
   conv: Conversation;
   active: boolean;
   collapsed: boolean;
+  mobile?: boolean;
   onMenu: (e: React.MouseEvent, conv: Conversation) => void;
   renaming: boolean;
   setRenaming: (id: string | null) => void;
@@ -65,7 +68,8 @@ function ConversationRow({
   return (
     <div
       className={clsx(
-        "group/row relative flex h-[32px] items-center rounded-lg pr-1 transition-colors",
+        "group/row relative flex items-center rounded-lg pr-1 transition-colors",
+        mobile ? "h-10" : "h-[32px]",
         active ? "bg-active" : "hover:bg-hover",
       )}
     >
@@ -105,10 +109,15 @@ function ConversationRow({
       {!renaming && (
         <button
           onClick={(e) => onMenu(e, conv)}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint opacity-0 transition-opacity hover:bg-active hover:text-ink group-hover/row:opacity-100 focus-visible:opacity-100"
+          className={clsx(
+            "flex shrink-0 items-center justify-center rounded text-faint transition-opacity hover:bg-active hover:text-ink",
+            mobile
+              ? "h-9 w-9 opacity-100"
+              : "h-6 w-6 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100",
+          )}
           aria-label="对话操作"
         >
-          <MoreHorizontal size={14} />
+          <MoreHorizontal size={mobile ? 17 : 14} />
         </button>
       )}
     </div>
@@ -130,6 +139,9 @@ export function Sidebar({
   const view = useAppStore((s) => s.view);
   const setView = useAppStore((s) => s.setView);
   const projects = useAppStore((s) => s.projects);
+  const memoryCount = useAppStore(
+    (s) => s.memories.filter((m) => m.status === "active").length,
+  );
   const conversations = useChatStore((s) => s.conversations);
   const activeId = useChatStore((s) => s.activeId);
   const newChat = useChatStore((s) => s.newChat);
@@ -223,7 +235,8 @@ export function Sidebar({
       onClick={onClick}
       title={collapsed ? label : undefined}
       className={clsx(
-        "flex h-8 w-full items-center gap-2.5 rounded-lg text-[13px] transition-colors",
+        "flex w-full items-center gap-2.5 rounded-lg text-[13px] transition-colors",
+        mobile ? "h-10 text-[14px]" : "h-8",
         collapsed ? "justify-center" : "px-2.5",
         active ? "bg-active text-ink" : "text-muted hover:bg-hover hover:text-ink",
       )}
@@ -312,9 +325,15 @@ export function Sidebar({
           onClick={() => setView({ name: "projects", projectId: null })}
         />
         <NavButton
+          icon={Brain}
+          label={`记忆${memoryCount ? ` · ${memoryCount}` : ""}`}
+          active={view.name === "settings" && view.section === "memory"}
+          onClick={() => setView({ name: "settings", section: "memory" })}
+        />
+        <NavButton
           icon={Settings2}
           label="设置"
-          active={view.name === "settings"}
+          active={view.name === "settings" && view.section !== "memory"}
           onClick={() => setView({ name: "settings", section: "general" })}
         />
       </div>
@@ -332,6 +351,7 @@ export function Sidebar({
                   conv={conv}
                   active={conv.id === activeId}
                   collapsed={collapsed}
+                  mobile={mobile}
                   onMenu={openMenu}
                   renaming={renamingId === conv.id}
                   setRenaming={setRenamingId}
@@ -349,6 +369,7 @@ export function Sidebar({
                   conv={conv}
                   active={conv.id === activeId}
                   collapsed={collapsed}
+                  mobile={mobile}
                   onMenu={openMenu}
                   renaming={renamingId === conv.id}
                   setRenaming={setRenamingId}
@@ -383,6 +404,7 @@ export function Sidebar({
                       conv={conv}
                       active={conv.id === activeId}
                       collapsed={collapsed}
+                      mobile={mobile}
                       onMenu={openMenu}
                       renaming={renamingId === conv.id}
                       setRenaming={setRenamingId}

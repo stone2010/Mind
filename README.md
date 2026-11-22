@@ -13,18 +13,18 @@
   <img alt="Android" src="https://img.shields.io/badge/Android-7.0%2B-3DDC84?logo=android" />
   <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri" />
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react" />
-  <img alt="Version" src="https://img.shields.io/badge/version-0.1.2-346DF5" />
+  <img alt="Version" src="https://img.shields.io/badge/version-0.1.3-346DF5" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/stone2010/Mind/releases/tag/v0.1.1"><strong>下载 Windows 安装包</strong></a>
+  <a href="https://github.com/stone2010/Mind/releases/tag/v0.1.3"><strong>下载 Windows 安装包</strong></a>
   ·
-  <a href="https://github.com/stone2010/Mind/releases/tag/v0.1.2-android"><strong>下载 Android APK</strong></a>
+  <a href="https://github.com/stone2010/Mind/releases/tag/v0.1.3"><strong>下载 Android APK</strong></a>
 </p>
 
 Mind 是一个面向普通用户的本地优先 AI 客户端：安装后填入 DeepSeek API Key 就能聊天，聊天记录、记忆、用量都保存在本机。默认 100k 上下文并在超出预算时自动压缩；支持联网搜索、长期记忆、本地 MCP 插件、GitHub 只读连接，以及 Mermaid 流程图和数据图表。
 
-> 当前源码版本为 `0.1.2`。Windows 安装包发布在 v0.1.1；Android 提供正式签名的 release APK（v0.1.2-android）。项目没有使用 Mind 自己的服务器中转请求，API Key 不会上传。
+> 当前版本为 `0.1.3`，Windows 安装包与 Android APK 均发布在 v0.1.3。项目没有使用 Mind 自己的服务器中转请求，API Key 不会上传。
 
 ## 界面
 
@@ -60,12 +60,12 @@ Mind 是一个面向普通用户的本地优先 AI 客户端：安装后填入 D
 
 ### 直接使用
 
-从 [Releases](https://github.com/stone2010/Mind/releases/tag/v0.1.1) 下载 `Mind_0.1.1_x64-setup.exe`，运行安装向导即可。安装包未签名，Windows SmartScreen 可能提示未知发布者；请确认下载来源。
+从 [Releases](https://github.com/stone2010/Mind/releases/tag/v0.1.3) 下载 `Mind_0.1.3_x64-setup.exe`，运行安装向导即可。安装包未签名，Windows SmartScreen 可能提示未知发布者；请确认下载来源。
 
-从 `0.1.2` 源码构建 Windows 安装包时，产物位于：
+从 `0.1.3` 源码构建 Windows 安装包时，产物位于：
 
 ```text
-src-tauri/target/release/bundle/nsis/Mind_0.1.2_x64-setup.exe
+src-tauri/target/release/bundle/nsis/Mind_0.1.3_x64-setup.exe
 ```
 
 首次打开：
@@ -81,22 +81,24 @@ src-tauri/target/release/bundle/nsis/Mind_0.1.2_x64-setup.exe
 
 Android 版使用同一套 React UI 和 Rust 后端，通过 Tauri 2 打包为 APK。当前提供 `arm64-v8a`、正式签名（release）构建，最低 Android 7.0（API 24），targetSdk 36，可长期安装使用。
 
-下载：[Mind Android v0.1.2 APK](https://github.com/stone2010/Mind/releases/tag/v0.1.2-android)
+下载：[Mind Android v0.1.3 APK](https://github.com/stone2010/Mind/releases/tag/v0.1.3)
 
 <p align="center">
   <img src="docs/screenshots/android-chat.png" width="30%" alt="移动端聊天" />
   <img src="docs/screenshots/android-drawer.png" width="30%" alt="移动端侧栏" />
-  <img src="docs/screenshots/android-connectors.png" width="30%" alt="移动端连接器" />
+  <img src="docs/screenshots/android-memory.png" width="30%" alt="移动端记忆" />
 </p>
 
-> 以上为 390×844 的移动布局预览（桌面 WebView 模拟 Android 视口与 UA），不是 Android 真机截图。
+> 以上为 390×844 的移动布局预览（桌面 WebView 模拟 Android 视口），不是 Android 真机截图。
 
-移动端已适配：
+移动端已按 DeepSeek 手机端的触控习惯适配：
 
-- 抽屉式历史侧栏与移动端设置导航
+- 抽屉式历史侧栏（带滑入动画）、移动端设置导航；抽屉里的对话操作按钮常驻，不再依赖 hover
 - 系统返回键：优先关闭抽屉/搜索、从设置或项目返回对话，在对话根页面退出应用
-- 软键盘避让、系统栏安全区域、edge-to-edge 布局、界面内的返回按钮
-- 聊天、流式输出、Markdown / 公式 / Mermaid / 图表
+- 软键盘避让、系统栏安全区域、edge-to-edge 布局、界面内返回按钮
+- 触控尺寸：发送/停止 36px、消息与记忆操作按钮 32px、列表行 40px；移动端隐藏桌面端费用角标，标题空间更充足
+- 设置页的横向标签会自动滚动到当前分区；记忆页支持搜索、类型筛选、手动添加与「从当前对话补记」
+- 聊天、流式输出、Markdown / 公式 / Mermaid / 图表、代码块复制
 - 联网搜索、长期记忆、用量与费用、GitHub 只读连接
 - 数据备份：复制 JSON 导出，文件选择器导入
 - API Key 与 GitHub Token 通过 Android Keystore 加密保存在应用私有目录，重启应用后无需重新填写
@@ -126,6 +128,8 @@ cd Mind
 npm install
 npm run tauri dev
 ```
+
+> 开发或便携使用时可设置环境变量 `MIND_DATA_DIR` 指定本地数据目录；不设置时使用系统应用数据目录。
 
 仅构建前端：
 
@@ -172,18 +176,18 @@ release 签名通过 `MIND_ANDROID_KEYSTORE`、`MIND_ANDROID_KEYSTORE_PASSWORD`�
 
 ## 长期记忆
 
-设置 → 记忆：
+设置 → 记忆，或侧边栏「记忆」（带有效条数）：
 
-- 自动记忆默认开启：每次回复后由轻量模型（DeepSeek 用 Flash）提取稳定的称呼、身份、偏好和长期项目；从旧版升级会迁移一次，明确关闭过“使用记忆”的用户保持关闭
-- 手动保存：任意消息下方点书签按钮；或在记忆页手动添加
-- 从当前对话补记：打开一段已有对话，点「立即提取」，可补回开启记忆前的内容
+- 自动记忆默认开启：每完成一轮新对话，由轻量模型（DeepSeek 用 Flash）提取稳定的称呼、身份、偏好和长期项目；没有新用户消息或 45 秒内不会重复调用，避免无意义的模型费用；从旧版升级会迁移一次，明确关闭过“使用记忆”的用户保持关闭
+- 手动保存：任意消息下方点书签按钮；或在记忆页手动添加（近似重复的记忆会直接返回已有条目，不会堆叠）
+- 从当前对话补记：打开一段已有对话，点「从当前对话补记」，可补回开启记忆前的内容
 - 注入与提取相互独立：「在对话中使用记忆」只控制是否把记忆发给模型；关闭后仍会继续积累
-- 记忆分为档案 / 偏好 / 项目 / 事件 / 知识五类，每条包含主题、置信度、重要度、状态、有效期与来源
-- 注入方式：最近记忆（默认）或相关记忆；相关模式使用 SQLite FTS5 关键词检索 + 重要度/置信度/时效/类型加权排序，最多注入 8 条；没有 FTS5 时自动降级为 LIKE 检索
+- 记忆分为档案 / 偏好 / 项目 / 事件 / 知识五类，每条包含主题、置信度、重要度、状态、有效期与来源；类型和主题属于「更多选项」，日常只需要写一句自然语言
+- 注入方式：相关记忆（默认，按当前问题挑最多 8 条，更省 token、噪音更少）或最近记忆（优先带最新记忆）；相关模式使用 SQLite FTS5 关键词检索 + 重要度/置信度/时效/类型加权排序，没有 FTS5 时自动降级为 LIKE 检索
 - 同一主题的新事实会替代旧事实，旧版本保留在历史中；设置页可手动「整理记忆」并查看「为什么记得」、来源对话和历史版本
 - 自动提取会做近似去重，并过滤 API Key、密码、银行卡、身份证等敏感内容
 - 每次对话最多注入 24 条（相关模式最多 8 条）、每条最多 200 字，并受上下文预算约四分之一限制
-- 对话标题栏显示有效记忆条数，点击可直接管理
+- 对话标题栏显示有效记忆条数，点击可直接管理；手机端为「记忆」页，抽屉里也能直接进入
 - 提取失败会在界面提示原因，不再静默失败
 - 删除记忆会同步清理 FTS 索引、来源记录与历史版本
 - 所有记忆保存在本地 SQLite；自动提取会产生少量模型费用
@@ -192,6 +196,10 @@ release 签名通过 `MIND_ANDROID_KEYSTORE`、`MIND_ANDROID_KEYSTORE_PASSWORD`�
 
 <p align="center">
   <img src="docs/screenshots/memory-engine.png" width="72%" alt="记忆管理" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/android-memory.png" width="30%" alt="手机端记忆管理" />
 </p>
 
 ## 可视化
@@ -207,7 +215,7 @@ release 签名通过 `MIND_ANDROID_KEYSTORE`、`MIND_ANDROID_KEYSTORE_PASSWORD`�
 
 ## 费用估算
 
-- 对话标题栏实时显示「本对话 ≈ X 分」，按对话内的真实 usage 与模型价格计算。
+- 对话标题栏实时显示「本对话 ≈ X 分」，按对话内的真实 usage 与模型价格计算（手机端收起，可在 设置 → 用量与费用 查看）。
 - DeepSeek 使用官方 USD 价格 × 汇率估人民币：Flash 输入（缓存未命中）$0.15–0.30 / 输出 $0.60–1.20；Pro 输入 $0.66–1.32 / 输出 $1.98–3.96（每百万 tokens，谷时–峰时）。
 - 缓存命中单独计价；usage 中的 `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` 会进入本地账单。
 - 峰时为工作日北京时间 09:00–12:00、14:00–18:00，其余为谷时；法定节假日暂按工作日计算。
@@ -324,7 +332,7 @@ scripts/dev/      CDP 驱动、OpenAI / MCP / GitHub Mock 服务
 已通过：
 
 - `npm run build`：TypeScript 与 Vite 构建通过
-- `cargo test --lib`：16 个单元测试通过（凭据往返、上下文预算、摘要注入、记忆上限、结构化提取/去重/敏感过滤、数据库迁移与 FTS、reasoning 回传）
+- `cargo test --lib`：20 个单元测试通过（凭据往返、上下文预算、摘要注入、记忆上限、结构化提取/去重/敏感过滤、数据库迁移与 FTS、reasoning 回传）
 - 长期记忆端到端（本地 OpenAI 兼容 Mock）：旧设置迁移开启自动记忆 → 结构化提取类型/主题/置信度/重要度与来源消息 → 新对话通过 FTS + 元数据召回 → 同主题新事实替代旧事实并保留版本 → 整理记忆与历史查询 → 删除后 FTS 不再命中 → 关闭注入后仍继续提取 → 手动书签与「立即提取」可用
 - 澄清交互：选项点按直接发送；文本题显示独立输入框并提交
 - 可视化增强：柱状/折线图坐标、数值标签、折线面积、环图、百分比、SVG 下载与图表代码复制
@@ -337,8 +345,9 @@ scripts/dev/      CDP 驱动、OpenAI / MCP / GitHub Mock 服务
 - 法律确认：用户协议/隐私说明确认门禁、关于页入口
 - 可视化：Mermaid、双系列柱状图、图片放大
 - 首次配置：完整引导流程、100k 默认上下文、插件环境检测
-- 移动布局：390×844 视口 + Android UA 下验证抽屉侧栏、移动设置导航、Android 连接器限制、数据备份入口，页面无横向溢出
-- Android APK：`Mind_0.1.2_android-arm64-release.apk` 编译成功，包名 `com.mind.desktop`、versionCode 1002、版本 0.1.2、minSdk 24、targetSdk 36，仅含 arm64-v8a 原生库；`apksigner` 签名校验通过（CN=Mind），`zipalign` 校验通过，AndroidManifest 中 `allowBackup=false`、`usesCleartextTraffic=false`、品牌启动图标与自适应图标已包含在 APK 中
+- 移动布局：390×844 移动视口下验证会话、抽屉（含对话操作菜单）、记忆页、设置、空状态与搜索弹层，无横向溢出；触控目标、抽屉动画、设置分区自动定位均已验证
+- 长期记忆：自动提取节流（无新用户消息 / 45 秒内不重复调用）、相关记忆注入、手动添加近似去重、提取请求 system+user 拆分，均用本地 Mock 与隔离数据目录验证
+- Android APK：`Mind_0.1.3_android-arm64-release.apk` 编译成功，包名 `com.mind.desktop`、versionCode 1003、版本 0.1.3、minSdk 24、targetSdk 36，仅含 arm64-v8a 原生库；`apksigner` 签名校验通过（CN=Mind），`zipalign` 校验通过，AndroidManifest 中 `allowBackup=false`、`usesCleartextTraffic=false`、品牌启动图标与自适应图标已包含在 APK 中
 
 未验证 / 已知限制：
 

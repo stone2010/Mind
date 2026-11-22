@@ -706,6 +706,7 @@ function MemoryPanel() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [draftType, setDraftType] = useState<MemoryType>("profile");
   const [draftSubject, setDraftSubject] = useState("");
+  const [addAdvanced, setAddAdvanced] = useState(false);
 
   const canExtract =
     !!activeId &&
@@ -872,71 +873,96 @@ function MemoryPanel() {
         description="记录你希望 Mind 长期记住的信息：可以手动添加、在消息下点书签保存，也可以让 Mind 在对话后自动提取。"
       />
 
-      <div className="mt-6 flex items-start justify-between gap-4 rounded-xl border border-line p-4">
-        <div>
-          <div className="text-[13px] font-medium text-ink">自动记忆</div>
-          <p className="mt-0.5 text-[12px] leading-5 text-muted">
-            每次回复后自动提取值得长期记住的信息（称呼、偏好、长期项目等）。会额外调用一次模型
-            （DeepSeek 默认使用 Flash），可能产生少量费用；内容只保存在本机。
-            它与下方「在对话中使用记忆」相互独立：即使关闭注入，也会继续积累。
+      <div className="mt-5 divide-y divide-line rounded-xl border border-line">
+        <div className="flex items-start justify-between gap-4 p-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-[13px] font-medium text-ink">
+              自动记忆
+              {activeMemories.length > 0 && (
+                <span className="rounded-full bg-accent-soft px-1.5 py-px text-[10.5px] font-normal text-accent">
+                  已记住 {activeMemories.length} 条
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-[12px] leading-5 text-muted">
+              对话结束后自动提取称呼、偏好和长期项目，只保存在本机。会额外调用一次轻量模型（少量费用）；即使关闭注入，也会继续积累。
+            </p>
+            {settings.demoMode && (
+              <p className="mt-1 text-[11.5px] text-faint">演示模式下不会执行自动记忆。</p>
+            )}
+          </div>
+          <Switch
+            checked={settings.autoMemory}
+            onChange={(value) => updateSettings({ autoMemory: value })}
+          />
+        </div>
+
+        <div className="flex items-start justify-between gap-4 p-4">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium text-ink">在对话中使用记忆</div>
+            <p className="mt-1 text-[12px] leading-5 text-muted">
+              新对话会自动带上相关的长期记忆；关闭后仍会继续积累，只是不再附加到对话里。
+            </p>
+          </div>
+          <Switch
+            checked={settings.longTermMemory}
+            onChange={(value) => updateSettings({ longTermMemory: value })}
+          />
+        </div>
+
+        <div className="p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[13px] font-medium text-ink">使用方式</div>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<Sparkles size={13} />}
+              loading={extracting}
+              disabled={!canExtract || settings.demoMode}
+              onClick={() => void extractFromConversation()}
+            >
+              从当前对话补记
+            </Button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <button
+              onClick={() => updateSettings({ memoryRecall: "recall" })}
+              className={clsx(
+                "h-8 rounded-lg border px-3 text-[12px] transition-colors",
+                settings.memoryRecall === "recall"
+                  ? "border-accent/40 bg-accent-soft text-accent"
+                  : "border-line text-muted hover:bg-hover hover:text-ink",
+              )}
+            >
+              相关记忆（推荐）
+            </button>
+            <button
+              onClick={() => updateSettings({ memoryRecall: "recent" })}
+              className={clsx(
+                "h-8 rounded-lg border px-3 text-[12px] transition-colors",
+                settings.memoryRecall === "recent"
+                  ? "border-accent/40 bg-accent-soft text-accent"
+                  : "border-line text-muted hover:bg-hover hover:text-ink",
+              )}
+            >
+              最近记忆
+            </button>
+          </div>
+          <p className="mt-1.5 text-[11px] leading-4 text-faint">
+            相关记忆：每次只附加与当前问题最相关的几条，更省 token、噪音更少；最近记忆：优先带上最新的记忆。
           </p>
+          {!canExtract && (
+            <p className="mt-1 text-[11px] text-faint">先打开一个有消息的对话，再回来补记。</p>
+          )}
           {settings.demoMode && (
-            <p className="mt-1 text-[11.5px] text-faint">演示模式下不会执行自动记忆。</p>
+            <p className="mt-1 text-[11px] text-faint">演示模式不调用模型，无法提取记忆。</p>
           )}
         </div>
-        <Switch
-          checked={settings.autoMemory}
-          onChange={(value) => updateSettings({ autoMemory: value })}
-        />
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-4 rounded-xl border border-line p-4">
-        <div>
-          <div className="text-[13px] font-medium text-ink">在对话中使用记忆</div>
-          <p className="mt-0.5 text-[12px] leading-5 text-muted">
-            仅控制是否把已保存的记忆附加到新对话；关闭后仍可继续自动提取和手动管理。
-          </p>
-        </div>
-        <Switch
-          checked={settings.longTermMemory}
-          onChange={(value) => updateSettings({ longTermMemory: value })}
-        />
-      </div>
-
-      <div className="mt-3 rounded-xl border border-line p-4">
-        <div className="text-[13px] font-medium text-ink">记忆注入方式</div>
-        <p className="mt-0.5 text-[12px] leading-5 text-muted">
-          最近模式注入最近的记忆；相关模式按当前问题挑最相关的记忆，更省 token、更准。
-        </p>
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
-          <button
-            onClick={() => updateSettings({ memoryRecall: "recent" })}
-            className={clsx(
-              "h-7 rounded-lg border px-2.5 text-[11.5px] transition-colors",
-              settings.memoryRecall === "recent"
-                ? "border-accent/40 bg-accent-soft text-accent"
-                : "border-line text-muted hover:bg-hover hover:text-ink",
-            )}
-          >
-            最近记忆
-          </button>
-          <button
-            onClick={() => updateSettings({ memoryRecall: "recall" })}
-            className={clsx(
-              "h-7 rounded-lg border px-2.5 text-[11.5px] transition-colors",
-              settings.memoryRecall === "recall"
-                ? "border-accent/40 bg-accent-soft text-accent"
-                : "border-line text-muted hover:bg-hover hover:text-ink",
-            )}
-          >
-            相关记忆（省 token）
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px] text-faint">
         {[
-          { label: "有效记忆", value: activeMemories.length },
+          { label: "有效", value: activeMemories.length },
           { label: "偏好", value: typeCounts.preference ?? 0 },
           { label: "项目", value: typeCounts.project ?? 0 },
           {
@@ -944,84 +970,81 @@ function MemoryPanel() {
             value: memories.filter((m) => m.status !== "active").length,
           },
         ].map((stat) => (
-          <div
+          <span
             key={stat.label}
-            className="rounded-lg border border-line bg-sidebar/50 px-3 py-2.5"
+            className="rounded-full border border-line px-2 py-0.5"
           >
-            <div className="text-[18px] font-semibold tabular-nums text-ink">
-              {stat.value}
-            </div>
-            <div className="text-[10.5px] text-faint">{stat.label}</div>
-          </div>
+            {stat.label} <span className="tabular-nums text-muted">{stat.value}</span>
+          </span>
         ))}
+        <span className="flex-1" />
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={<RefreshCw size={13} />}
+          loading={consolidating}
+          onClick={() => void consolidate()}
+        >
+          整理记忆
+        </Button>
       </div>
 
-      <div className="mt-3 rounded-xl border border-line p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-[13px] font-medium text-ink">从当前对话补记</div>
-            <p className="mt-0.5 text-[12px] leading-5 text-muted">
-              立即分析当前对话并提取长期信息。适合刚开启记忆、或想补回之前已经聊过的内容。
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant="secondary"
-            icon={<Sparkles size={13} />}
-            loading={extracting}
-            disabled={!canExtract || settings.demoMode}
-            onClick={() => void extractFromConversation()}
-          >
-            立即提取
-          </Button>
-        </div>
-        {!canExtract && (
-          <p className="mt-2 text-[11px] text-faint">先打开一个有消息的对话，再回到这里提取。</p>
-        )}
-        {settings.demoMode && (
-          <p className="mt-2 text-[11px] text-faint">演示模式不调用模型，无法提取记忆。</p>
-        )}
-      </div>
-
-      <div className="mt-4 rounded-xl border border-line p-4">
-        <div className="mb-2 flex flex-wrap gap-2">
-          <select
-            value={draftType}
-            onChange={(e) => setDraftType(e.target.value as MemoryType)}
-            className="h-8 rounded-lg border border-line bg-panel px-2 text-[12px] text-ink focus:border-accent focus:outline-none"
-            aria-label="记忆类型"
-          >
-            {(Object.keys(MEMORY_TYPE_META) as MemoryType[]).map((type) => (
-              <option key={type} value={type}>
-                {MEMORY_TYPE_META[type].label}
-              </option>
-            ))}
-          </select>
+      <div className="mt-4 rounded-xl border border-line p-3">
+        <div className="flex gap-2">
           <Input
-            value={draftSubject}
-            onChange={(e) => setDraftSubject(e.target.value)}
-            placeholder="主题标识（可选，如 response_style）"
-            className="h-8 flex-1 text-[12px]"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="添加记忆，例如：请始终用简体中文回答"
+            className="h-10 flex-1 text-[13px]"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                if (draft.trim() && !saving) void add();
+              }
+            }}
           />
-        </div>
-        <Textarea
-          rows={2}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="例如：请始终用简体中文回答；我是一名产品经理。"
-        />
-        <div className="mt-2 flex justify-end">
           <Button
-            size="sm"
             variant="primary"
-            icon={<Plus size={13} />}
+            icon={<Plus size={14} />}
             loading={saving}
             disabled={!draft.trim()}
             onClick={add}
           >
-            添加记忆
+            添加
           </Button>
         </div>
+        <button
+          onClick={() => setAddAdvanced((value) => !value)}
+          className="mt-1 flex h-7 items-center gap-1 text-[11.5px] text-faint hover:text-muted"
+        >
+          <ChevronDown
+            size={12}
+            className={clsx("transition-transform", addAdvanced && "rotate-180")}
+          />
+          更多选项（类型 / 主题）
+        </button>
+        {addAdvanced && (
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            <select
+              value={draftType}
+              onChange={(e) => setDraftType(e.target.value as MemoryType)}
+              className="h-9 rounded-lg border border-line bg-panel px-2 text-[12.5px] text-ink focus:border-accent focus:outline-none"
+              aria-label="记忆类型"
+            >
+              {(Object.keys(MEMORY_TYPE_META) as MemoryType[]).map((type) => (
+                <option key={type} value={type}>
+                  {MEMORY_TYPE_META[type].label}
+                </option>
+              ))}
+            </select>
+            <Input
+              value={draftSubject}
+              onChange={(e) => setDraftSubject(e.target.value)}
+              placeholder="主题标识（可选，如 response_style）"
+              className="h-9 flex-1 text-[12.5px]"
+            />
+          </div>
+        )}
       </div>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
@@ -1043,15 +1066,6 @@ function MemoryPanel() {
           >
             {showInactive ? "只看有效" : "显示已替代"}
           </button>
-          <Button
-            size="sm"
-            variant="ghost"
-            icon={<RefreshCw size={13} />}
-            loading={consolidating}
-            onClick={() => void consolidate()}
-          >
-            整理记忆
-          </Button>
         </div>
       </div>
 
@@ -1059,7 +1073,7 @@ function MemoryPanel() {
         <button
           onClick={() => setTypeFilter("all")}
           className={clsx(
-            "h-7 rounded-full border px-2.5 text-[11.5px] transition-colors",
+            "h-8 rounded-full border px-2.5 text-[11.5px] transition-colors",
             typeFilter === "all"
               ? "border-accent/40 bg-accent-soft text-accent"
               : "border-line text-muted hover:bg-hover hover:text-ink",
@@ -1387,6 +1401,13 @@ export function SettingsView() {
     if (section === "developer") setAdvancedOpen(true);
   }, [section]);
 
+  // Keep the active settings tab visible in the horizontally scrolling mobile
+  // tab strip (entering Memory from the chat header otherwise lands off-screen).
+  useEffect(() => {
+    const el = document.querySelector<HTMLElement>(`[data-nav-section="${section}"]`);
+    el?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [section]);
+
   const select = (id: SettingsSection) => setView({ name: "settings", section: id });
 
   const panels = (
@@ -1405,25 +1426,26 @@ export function SettingsView() {
   if (mobile) {
     return (
       <div className="flex h-full min-w-0 flex-1 flex-col bg-bg">
-        <div className="flex h-12 shrink-0 items-center border-b border-line px-2">
+        <div className="flex h-[52px] shrink-0 items-center border-b border-line px-2">
           <button
             onClick={() => setView({ name: "chat" })}
-            className="flex h-9 items-center gap-1 rounded-lg px-2 text-[13px] text-muted hover:bg-hover hover:text-ink"
+            className="flex h-10 items-center gap-1 rounded-lg px-2 text-[13.5px] text-muted hover:bg-hover hover:text-ink"
           >
-            <ArrowLeft size={17} />
+            <ArrowLeft size={18} />
             返回
           </button>
-          <h1 className="flex-1 text-center text-[13.5px] font-medium text-ink">设置</h1>
+          <h1 className="flex-1 text-center text-[14px] font-medium text-ink">设置</h1>
           <div className="w-[64px]" />
         </div>
 
-        <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line px-3 py-2">
+        <div className="flex shrink-0 scroll-px-3 gap-1.5 overflow-x-auto border-b border-line px-3 py-2">
           {NAV_ITEMS.map((item) => (
             <button
               key={item.id}
+              data-nav-section={item.id}
               onClick={() => select(item.id)}
               className={clsx(
-                "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[12px] transition-colors",
+                "flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[12.5px] transition-colors",
                 section === item.id
                   ? "bg-accent-soft text-accent"
                   : "text-muted hover:bg-hover hover:text-ink",
